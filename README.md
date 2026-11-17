@@ -17,7 +17,7 @@ The active text engine uses a 12 GiB host cache. Up to 8 GiB can survive an engi
 
 ## Install on a B70 workstation
 
-The reference stack targets x86-64 Arch/Manjaro Linux, systemd, the Intel xe driver and a 32 GB B70. Desktop preparation uses the Arch and Manjaro keyrings. Use a regular account with Docker and render-device access. Install Git, Python 3.12, Node.js 24 and npm, Bubblewrap, Bash, curl, jq, GNU core utilities, GCC/G++, GnuPG, CMake, Ninja, libarchive, and the Rust toolchain pinned in `dashboard/ops/desktop/build.sh`. Provide Chrome under `/opt/google/chrome` or use `--browser-root` with a separate Chrome installation. The packaged Chromium runtime is used for desktop browsing. Allow disk space for Docker build stages and model downloads. The three image weights alone use about 38 GB.
+The reference stack targets x86-64 Arch Linux, systemd, the Intel xe driver and a 32 GB B70. Use a regular account with Docker and render-device access. Install Git, Python 3.12, Node.js 24 and npm, Bubblewrap, Bash, curl, jq, GNU core utilities, GCC/G++, GnuPG, CMake, Ninja, libarchive, and the Rust toolchain pinned in `dashboard/ops/desktop/build.sh`. Provide Chrome under `/opt/google/chrome` or use `--browser-root` with a separate Chrome installation. The packaged Chromium runtime is used for desktop browsing. Allow disk space for Docker build stages and model downloads. The three image weights alone use about 38 GB.
 
 ### 1. Build the text engine
 
@@ -49,6 +49,8 @@ curl -fsS http://127.0.0.1:8081/health
 Wait for model loading before checking health. On a machine that already has the exact qualified image, keep its matching tag in `.env` and omit the build receipt. Both paths check the checkpoint files and serving configuration.
 
 ### 2. Prepare the image engine and sandbox runtimes
+
+Before building the sandbox desktop, install the [signing keyrings for its pinned packages](dashboard/ops/desktop/README.md).
 
 From the **repository root**, prepare the pinned ComfyUI checkout. The installer verifies model and Intel package checksums and creates an isolated Python environment. Downloads are stored under `.work/ComfyUI` by default.
 
