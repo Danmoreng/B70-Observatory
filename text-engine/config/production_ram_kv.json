@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "PRODUCTION",
+  "release_date": "2026-11-17",
+  "base_image_id": "sha256:131dd9e11809de2f3136547618f130ee238f0b90cd5718567bcdd0dad5360e19",
+  "default_cpu_gib": 12,
+  "allowed_cpu_gib": [
+    1,
+    12
+  ],
+  "runtime_sha256": {
+    "kv_admission.py": "ae9ecc0884c406d7908247cf4dfcff2861c41e77ae6ec4f08cc0bd49ae578cc0",
+    "xpu_cpu_offload.py": "6f0b474b078b3dd6a6ad63c10d84d620592d6c5733e62d51b9a3de33f20e9b36",
+    "prefix_ram.py": "de1800b702c34438401815e85cb926bd6f07a4c671ecb9ea00a9125aece11962",
+    "switch_cache.py": "663bb7ffdf62a690bd6a0c04565124c2c3f71b1ea3d55ea4f9c87b88b1affbc1"
+  },
+  "validation": "benchmarks/results/direct-xpu-followup-20261115/release/gate-assessment.json",
+  "note": "Optional reclaimable switch RAM on the qualified 12 GiB primary runtime.",
+  "kv_cache_layout": "LBNHC",
+  "layout_validation": "benchmarks/results/ram-kv-layout-20261108/README.md",
+  "switch_ram_gib": 8,
+  "switch_validation": "benchmarks/prefix-image-switch-20261117/ram-release/result.json (local workspace)"
+}

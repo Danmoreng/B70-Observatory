@@ -1,0 +1,35 @@
+[Unit]
+Description=Local AI B70 Observatory
+After=network-online.target
+Wants=network-online.target
+Wants=local-ai-b70-gpu-helper.service
+After=local-ai-b70-gpu-helper.service
+Wants=local-ai-b70-runner.service
+After=local-ai-b70-runner.service
+Wants=local-ai-b70-release-helper.service
+After=local-ai-b70-release-helper.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{RELEASE_ROOT}}/current
+EnvironmentFile={{ENV_FILE}}
+Environment=OBSERVATORY_WEB_ROOT={{RELEASE_ROOT}}/current/web
+ExecStart={{NODE_BINARY}} {{RELEASE_ROOT}}/current/server.cjs
+# Clean process exits caused by unexpected SIGTERM must restore the web UI.
+# An explicit `systemctl stop` remains stopped by systemd semantics.
+Restart=always
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths="{{PROJECT_DIR}}/data"
+InaccessiblePaths=/var/lib/local-ai-b70-runner
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

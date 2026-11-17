@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "chromium",
+  "versionString": "156.0.8078.79-1",
+  "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/chromium-156.0.8078.79-1-x86_64.pkg.tar.zst",
+  "sha256": "6deb71d075b5de3587cf481add6e0d77a24eaa5d53c870b254dddad22247d0d2",
+  "size": 146202472,
+  "signature": "iQIzBAABCgAdFiEE8AuW0VIoAT/8nJ0Dk7EdqkwZfj0FAmrkcuYACgkQk7EdqkwZfj34gA//fG8R+R8cXapgM6xK7PB4mJ0xWmhosr0WQOGXGK9Z9GPLYOH+UEFIyhzbmaUluNKUpc1/6EXcCblG/zPSRno0w5rjsx04zAjm9o90vjBWIfrFHMki5i9iZq3HBqeRNRTAA7AYAOAA4p5rZmew04ltrHgnYvC3MolhzAM5X/qp5CvEDvPAGFdsfTTktw1VTLGLIQs2Ju4fNG24kL/4qg+4qyLckyVmpcKecADwS7gIk24GC2UgWoriUoKOjo9B/7khoPDHVTQa+ikVrSa2YTDl4a5UjbhhFvy/PwEyOdcdZPqHen8MrYEajaLhAeAd3LckUr98bmEKlRMRvzPduHS0Uo8TGxzV42HcQnc4JQpdaPt8vlbzBQeZ55dgRMeIIQlls2m0+eHQMIbA+4EWsMDLDQ/KriEVQpGe9FSdzNJqdZo+9NvIXnqWbi4ov6MjywoFd9W1d+HttjGuxWJ3ne77OyOS0hoQVzv7eDD39Nb/DtvjNVnOJKpsKFoQX7hkIswg5pBF50JuZgooAtbO3YEMf5BPDGY1nF7zM0gu/Quol6UzfqCZAGVkPHlzoqtp+sDAc16FkGY/CxcHPj4ZSaOXNvqgf0WUq2VnK2mrsBV0Uev3VWkFWyWPYmoRdk+k3lrknywi1FXQ4izkG6fvL83Y2Z+ceKVbWjnUbVHnhJGXfN0=",
+  "licenses": ["BSD-3-Clause"],
+  "upstream": "https://www.chromium.org",
+  "dependencies": [
+    {
+      "name": "simdutf",
+      "versionString": "9.2.1-2",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/simdutf-9.2.1-2-x86_64.pkg.tar.zst",
+      "sha256": "8ef4a435d1022d4591318f84e3b6a40f36102a434b42afab25fb8c75cee31262",
+      "size": 329724,
+      "signature": "iQIzBAABCgAdFiEExdKm4O0tEcZrn6KjBjE5EQV91agFAmq/nqAACgkQBjE5EQV91ajM4g//T4bPWZb/4933jCp+bAX2tPpePcs5C2Hyd8UGeyz+sJIJtfIY6DTHv8R8cpXAZ7DiJJ+YjCQzLx5o+KItOLTwqMEhYOmR340G5V0iGxwd6wYQehD5QYOZ3gqNaP4ac10B5hVczkkGhlLx7IENJI/cGbNNjq4eHhQ0jiH4XLbkiu0IV1c/0XL296YJq2uUSE72PMWJIZ4mb2tRZPwerOdeFrbYYYMJfQxU5CliT2KHJFA87ugDiNDl6PHBhTDexLwJVTulwd70zgoVAlPMkLYRzIJFOUQkKTH0HjEsK9DUOPlPkRJj6eY1+N1kc+SBURQUEWwh5m6SCz5gIeS2d4HM98ALCxfh92sUWsSX18WV4JjJDJpx4bx6YRa81QF8usHBnpUS0TXdoeFHfchGJF0auYQ+oSxZcdQyANaSjZP7cd1OBXuqQOubWRiN1Bk/89aQQq8k51SKqAKPefLryGOxhlLwIWbFsqH+HVdINvLW4OFp9Z0WsZvq1kGZrJaMmR0SxE4hdRRJ9yCTff0DmD0Z51Lah2wDbxci9fucBvX572xw4Wyg/R6iVjMqJ0VKseQlI9DUJCqPmEGyfzBEPkRfYxkrYLO/gRHJjZ7ZDThgT3B97skzrPymaxERLY7qE0iyt298jc7BOf6rRQqnzJoejbl6lEOuUzBudeCqnw3rXR8=",
+      "licenses": ["Apache-2.0 OR MIT"]
+    }
+  ]
+}

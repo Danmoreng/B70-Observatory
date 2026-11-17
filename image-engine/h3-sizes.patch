@@ -1,0 +1,17 @@
+diff --git a/image_sizes.py b/image_sizes.py
+index adf2120..35622bb 100644
+--- a/image_sizes.py
++++ b/image_sizes.py
+@@ -24,8 +24,12 @@ ASPECT_RATIOS = {
+ }
+ # label -> megapixels in 1024*1024 units; the model card's working range is about 4-20 MP, best near 16
+ MEGAPIXELS = {
++    "1 MP (test)": 1,
++    "1.5 MP": 1.5,
++    "2.25 MP (test)": 2.25,
+     "4 MP (fast)": 4,
+     "8 MP": 8,
++    "15.84 MP": 15.84375,
+     "16 MP (best, model card)": 16,
+     "20 MP (upper limit)": 20,
+ }

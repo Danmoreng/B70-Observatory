@@ -1,0 +1,49 @@
+[Unit]
+Description=Local AI B70 controlled release activator
+After=network-online.target
+Wants=network-online.target
+Before=local-ai-b70-runner.service local-ai-b70-observatory.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+Group={{GROUP}}
+WorkingDirectory=/
+EnvironmentFile={{RELEASE_ENV_FILE}}
+Environment=B70_RELEASE_HELPER_SOCKET=/run/local-ai-b70-release-helper/control.sock
+Environment=B70_RELEASE_STAGING_ROOT=/var/lib/local-ai-b70-runner/releases
+Environment=B70_RELEASE_ACTIVE_ROOT={{RELEASE_ROOT}}
+ExecStart={{NODE_BINARY}} {{RELEASE_HELPER_BINARY}}
+Restart=on-failure
+RestartSec=3s
+RuntimeDirectory=local-ai-b70-release-helper
+RuntimeDirectoryMode=0750
+StateDirectory=local-ai-b70-releases
+StateDirectoryMode=0750
+UMask=0007
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+# Node/V8 requires executable JIT pages during isolate startup.
+ReadOnlyPaths=/var/lib/local-ai-b70-runner/releases
+ReadWritePaths={{RELEASE_ROOT}} /run/local-ai-b70-release-helper
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow={{OBSERVATORY_HOST}}
+
+[Install]
+WantedBy=multi-user.target

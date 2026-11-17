@@ -1,0 +1,21 @@
+[Unit]
+Description=Qwen3.8 27B on Intel Arc Pro B70 with vLLM
+Wants=b70-prefix-ram.service
+After=network.target b70-prefix-ram.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+WorkingDirectory=@REPO_DIR@
+EnvironmentFile=-@REPO_DIR@/.env
+ExecStartPre=-/usr/bin/python3 @REPO_DIR@/runtime/prefix_ram.py text-start
+ExecStartPre=@REPO_DIR@/scripts/set-power-limit.py
+ExecStart=@REPO_DIR@/scripts/run-server.sh
+ExecStop=-/usr/bin/docker stop -t 45 b70-qwen38-vllm
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=660
+TimeoutStopSec=65
+
+[Install]
+WantedBy=default.target

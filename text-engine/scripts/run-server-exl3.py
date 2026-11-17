@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Strict immutable EXL3 production launch; check-only supports release review."""
+import argparse
+import json
+import os
+from pathlib import Path
+from b70_device import b70_device
+from local_build import local_build
+import subprocess
+
+from exl3_candidate_worker import REPO, MODEL, profile, sha
+from ram_kv_release import load_overlay, serving_arguments
+
+RUNTIME_VERSIONS = {
+    'b70-qwen38-exl3-production-v1': ('0.30.0', '2.13.0+xpu'),
+    'b70-qwen38-exl3-production-v2': ('0.30.0', '2.13.0+xpu'),
+    'b70-qwen38-exl3-production-v3': ('0.31.0', '2.14.0+xpu'),
+    'b70-qwen38-exl3-production-v4': ('0.33.0', '2.14.0+xpu'),
+    'b70-qwen38-exl3-production-v5': ('0.33.0', '2.14.0+xpu'),
+    'b70-qwen38-exl3-production-v6': ('0.33.0', '2.15.0+xpu'),
+    'b70-qwen38-exl3-production-v7': ('0.33.0', '2.15.0+xpu'),
+}
+
+# Diagnostics only: keep the frozen model/runtime/image and sampling arguments.
+OBSERVABILITY_FLAGS = ['--enable-per-request-metrics', '--enable-prompt-tokens-details']
+
+
+def main():
+    if not __debug__:
+        raise SystemExit('Production integrity checks require ordinary Python execution')
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--check-only',action='store_true')
+    p.add_argument('--release-dir',type=Path,default=REPO/'config')
+    a=p.parse_args();directory=a.release_dir.resolve()
+    policy_file=directory/'production_policy.json'
+    policy=json.loads(policy_file.read_text());digest=sha(policy_file)
+    assert digest==(directory/'production_policy.sha256').read_text().split()[0], 'Production policy hash mismatch'
+    release=json.loads((directory/'production_image.json').read_text())
+    assert release['policy_sha256']==digest
+    assert (release['status']=='QUALIFIED_RELEASE' or
+            (a.check_only and release['status']=='CANDIDATE_PREFLIGHT_ONLY')), 'Release not approved'
+    assert policy['policy_id'] in RUNTIME_VERSIONS, 'Unsupported production policy'
+    expected_vllm, expected_torch = RUNTIME_VERSIONS[policy['policy_id']]
+    assert (policy['runtime']['vllm'], policy['runtime']['torch']) == (expected_vllm, expected_torch), 'Policy runtime version mismatch'
+    build_receipt = os.environ.get('B70_BUILD_RECEIPT')
+    image, image_id = local_build(build_receipt) if build_receipt else (release['image_tag'], release['image_id'])
+    inspected=json.loads(subprocess.check_output(['docker','image','inspect',image],text=True))[0]
+    assert inspected['Id']==image_id, 'Production image tag moved'
+    if not build_receipt:
+        assert inspected['Config']['Labels']['org.local.b70.policy.sha256']==digest
+    cfg=profile(image_id)
+    if policy['policy_id'] in ('b70-qwen38-exl3-production-v2','b70-qwen38-exl3-production-v3','b70-qwen38-exl3-production-v4','b70-qwen38-exl3-production-v5','b70-qwen38-exl3-production-v6','b70-qwen38-exl3-production-v7'):
+        assert policy['attention']['partition_cache']['capacity']==64
+        image_env=dict(x.split('=',1) for x in inspected['Config']['Env'])
+        assert image_env.get('EXL3_SDPA_CACHE_CAPACITY')=='64'
+        assert release['environment_overrides']=={'EXL3_SDPA_CACHE_CAPACITY':'64'}
+        cfg['env'].update(release['environment_overrides'])
+    required={'VLLM_IMAGE':image,'MODEL_ID':policy['model']['id'],'MODEL_REVISION':policy['model']['revision'],
+        'SERVED_MODEL_NAME':policy['model']['served_name'],'CONTEXT_SIZE':'262144','GPU_MEMORY_UTILIZATION':'0.965',
+        'MAX_NUM_BATCHED_TOKENS':'4096','MAX_NUM_SEQS':'16','SPECULATIVE_TOKENS':'3',
+        'SCHEDULER_WATERMARK':'0.0','PREFIX_CACHING':'1','B70_POWER_LIMIT_W':'180','ZE_AFFINITY_MASK':'0'}
+    for key,value in required.items():
+        assert os.environ.get(key,value)==value, 'Production profile override: '+key
+    for key,value in cfg['env'].items():
+        assert os.environ.get(key,value)==value, 'Frozen EXL3 environment override: '+key
+    assert cfg['config']['vllm']==release['vllm_config'], 'Frozen serving arguments changed'
+    overlay = load_overlay(REPO, release)
+    if build_receipt and overlay and overlay.get('switch_ram_gib'):
+        tier = overlay['transfer']['kv_connector_extra_config']['secondary_tiers'][0]
+        tier['release_id'] += '/' + image_id
+    runtime = REPO / (overlay['runtime_directory'] if overlay else 'runtime')
+    assert sha(runtime/'request_defaults.py')==release['request_defaults_sha256'], 'Serving middleware changed'
+    serving_argv = serving_arguments(cfg['argv'][1:], overlay)
+    serving_argv += OBSERVABILITY_FLAGS
+    for path,digest_expected in release['checkpoint_files_sha256'].items():
+        assert sha(MODEL/path)==digest_expected, 'Checkpoint identity mismatch: '+path
+    verify="""import hashlib,json,pathlib,runpy,torch,vllm
+runpy.run_path('/opt/exl3xpu/scripts/verify_native_artifact.py')
+r=json.loads(__import__('sys').argv[1])
+versions=json.loads(__import__('sys').argv[2])
+assert (vllm.__version__,torch.__version__)==tuple(versions), 'Runtime ABI/version mismatch'
+for p,h in r.items():assert hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()==h,p
+torch.ops.load_library('/opt/exl3xpu/m04/m04.so')
+assert torch._C._dispatch_has_kernel_for_dispatch_key('b70_exl3_attention::shared_kv_verify_out','XPU')
+"""
+    verify_cmd = ['docker','run','--rm','--network','none','--entrypoint','python',image_id]
+    if build_receipt:
+        subprocess.run(verify_cmd + ['/opt/b70-direct/check-image.py'], check=True)
+    else:
+        subprocess.run(verify_cmd + ['-c',verify,json.dumps(release['runtime_artifacts_sha256']),
+                                     json.dumps([expected_vllm,expected_torch])], check=True)
+    node=Path('/dev/dri') / next((b70_device()/'drm').glob('renderD*')).name;assert node.exists()
+    caps=list((b70_device() / 'hwmon').glob('*/power1_cap'))
+    assert len(caps)==1 and int(caps[0].read_text())==180000000, 'Card power limit must be180W'
+    cache=Path(os.environ.get('XDG_CACHE_HOME',str(Path.home()/'.cache')))/'b70-qwen38-vllm-production'/digest/image_id.removeprefix('sha256:')
+    print(json.dumps(dict(status='LAUNCH_PREFLIGHT_PASS',release_status='LOCAL_BUILD' if build_receipt else release['status'],
+                         image_id=image_id,policy_sha256=digest,cache=str(cache),
+                         ram_kv=overlay, observability_flags=OBSERVABILITY_FLAGS)),flush=True)
+    if a.check_only:return
+    switch_dir = None
+    if overlay and overlay.get('switch_ram_gib'):
+        switch_dir = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'b70-prefix-ram'
+        switch_dir.mkdir(mode=0o700, exist_ok=True)
+    if overlay:
+        available = next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
+        if available < (overlay['cpu_gib'] + 7)*1024**3:
+            if switch_dir:
+                # Release optional survivors before applying the existing text admission gate.
+                subprocess.run(['python3', str(runtime/'prefix_ram.py'), 'clear'], check=False)
+                available = next(int(line.split()[1])*1024 for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:'))
+        if available < (overlay['cpu_gib'] + 7)*1024**3:
+            raise SystemExit('Insufficient available RAM for cache plus 7 GiB runtime/headroom')
+    env={**cfg['env'],**(overlay['environment'] if overlay else {}),
+         'HF_HUB_OFFLINE':'1','PYTHONPATH':'/opt/b70-runtime','ZE_AFFINITY_MASK':'0',
+         'EXL3_LOADER_REPORT_DIR':'/results/loader'}
+    results=cache/'reports';results.mkdir(parents=True,exist_ok=True)
+    argv=['docker','run','--rm','--name',os.environ.get('VLLM_CONTAINER','b70-qwen38-vllm'),
+        '--device','/dev/dri','--group-add',str(node.stat().st_gid),'--shm-size','8g',
+        '-p',os.environ.get('VLLM_HOST','127.0.0.1')+':'+os.environ.get('PORT','8081')+':8000',
+        '-v',str(MODEL)+':/models/checkpoint:ro','-v',str(runtime)+':/opt/b70-runtime:ro',
+        '-v',str(results)+':/results']
+    if overlay:
+        argv[argv.index('--shm-size') + 1] = str(overlay['cpu_gib'] + 2) + 'g'
+        argv += ['--memory','23g','--memory-swap','23g',
+                 '--label','org.local.b70.release-status=' + ('LOCAL_BUILD' if build_receipt else 'PRODUCTION'),
+                 '--label','org.local.b70.experiment=',
+                 '--label','org.local.b70.runtime-extension.sha256='+overlay['sha256'],
+                 '--label','org.local.b70.kv-ram-gib='+str(overlay['cpu_gib'])]
+    if switch_dir:
+        argv += ['--mount', f'type=bind,src={switch_dir},dst=/run/b70-prefix-ram,readonly']
+    for key,target in [('vllm','/root/.cache/vllm'),('triton','/root/.triton/cache'),('neo_compiler_cache','/root/.cache/neo_compiler_cache')]:
+        (cache/key).mkdir(parents=True,exist_ok=True);argv+=['-v',str(cache/key)+':'+target]
+    for key,value in env.items():argv+=['-e',key+'='+value]
+    argv+=['--entrypoint','/opt/venv/bin/vllm',image_id,*serving_argv]
+    os.execvp(argv[0],argv)
+
+
+if __name__=='__main__':main()

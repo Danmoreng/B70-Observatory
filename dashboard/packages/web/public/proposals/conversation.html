@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Conversation – Gestaltungsvorschläge</title>
+    <link rel="stylesheet" href="/proposals/conversation.css" />
+  </head>
+  <body>
+    <main>
+      <a href="/#/overview">← Zum Observatory</a>
+      <p class="eyebrow">Entscheidung · gemeinsame Tool-Karte übernommen</p>
+      <h1>Conversation · geprüfte Gestaltungsvorschläge</h1>
+      <p class="intro">
+        Beispieldaten, keine Screenshots eines echten Agentenlaufs. Das Schriftbild bleibt
+        unverändert. Die gemeinsame Tool-Karte wurde übernommen; alle Argumente, Ergebnisse und
+        Bilder bleiben offen sichtbar.
+      </p>
+      <section>
+        <h2>1. Nicht übernommen: Fließtext absetzen</h2>
+        <p>
+          Agententext erhält etwas mehr Zeilenabstand und eine angenehmere Zeilenlänge. Technische
+          Ausgaben behalten ihre kompakte Monospace-Schrift. Inhalt und Anzahl der Boxen bleiben
+          gleich.
+        </p>
+        <div class="comparison">
+          <article>
+            <h3>Heutiges Prinzip</h3>
+            <div class="sample current">
+              <header>Agent <span>Finished · 18:12:03</span></header>
+              <p>
+                Die Landschaftsbilder sind jetzt als WebP eingebunden. Ich prüfe als Nächstes, ob
+                die Karten auf dem iPad sauber umbrechen und alle Bilddateien geladen werden.
+              </p>
+            </div>
+            <div class="technical">
+              <header>Tool output</header>
+              <pre>
+GET /assets/highlands.webp 200
+GET /assets/coast.webp     200
+Viewport: 1024 × 1366</pre>
+            </div>
+          </article>
+          <article>
+            <h3>Vorschlag: nur Typografie</h3>
+            <div class="sample proposed-prose">
+              <header>Agent <span>Finished · 18:12:03</span></header>
+              <p>
+                Die Landschaftsbilder sind jetzt als WebP eingebunden. Ich prüfe als Nächstes, ob
+                die Karten auf dem iPad sauber umbrechen und alle Bilddateien geladen werden.
+              </p>
+            </div>
+            <div class="technical">
+              <header>Tool output</header>
+              <pre>
+GET /assets/highlands.webp 200
+GET /assets/coast.webp     200
+Viewport: 1024 × 1366</pre>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section>
+        <h2>2. Umgesetzt: gemeinsame Karte für Argumente und Ergebnis</h2>
+        <p>
+          Ein gemeinsamer Rahmen verbindet die beiden weiterhin getrennten, offenen Blöcke. Ein
+          Tool-Aufruf erhält genau eine Kopfzeile mit Name, Status und Dauer. Das Ergebnis bleibt
+          unter den Argumenten.
+        </p>
+        <div class="comparison">
+          <article>
+            <h3>Heutiges Prinzip</h3>
+            <header class="tool-heading">browser_action <span>Finished · 0.8 s</span></header>
+            <div class="technical">
+              <header>Tool arguments</header>
+              <pre>
+{
+  "action": "resize",
+  "width": 1024,
+  "height": 1366
+}</pre>
+            </div>
+            <div class="technical">
+              <header>Tool output</header>
+              <div class="image-placeholder">[Dasselbe Screenshot-Bild wie im Agentenlauf]</div>
+              <pre>
+Beispiel für eine zusätzliche Ausgabe,
+falls das Werkzeug Text zurückgibt.</pre>
+            </div>
+          </article>
+          <article>
+            <h3>Vorschlag: gemeinsamer Rahmen</h3>
+            <div class="tool-call">
+              <header class="tool-heading">browser_action <span>Finished · 0.8 s</span></header>
+              <div class="technical">
+                <header>Tool arguments</header>
+                <pre>
+{
+  "action": "resize",
+  "width": 1024,
+  "height": 1366
+}</pre>
+              </div>
+              <div class="technical">
+                <header>Tool output</header>
+                <div class="image-placeholder">[Dasselbe Screenshot-Bild wie im Agentenlauf]</div>
+                <pre>
+Beispiel für eine zusätzliche Ausgabe,
+falls das Werkzeug Text zurückgibt.</pre>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section>
+        <h2>Was mit „Diagnosebereich“ gemeint war</h2>
+        <p>
+          Innerhalb von <strong>App Preview</strong> könnte es später einen separaten Reiter
+          <strong>Diagnose</strong> für npm-, Build- und Serverlogs geben. Die Status-/Versionszeile
+          und „Öffnen“ blieben sofort sichtbar. Die Logs wären weiter vollständig erreichbar, würden
+          aber nicht ständig unter den Bedienelementen stehen. Die Conversation und ihre
+          Tool-Ausgaben wären davon unabhängig.
+        </p>
+        <p>
+          <strong>Das ist hier nur erklärt, noch nicht umgesetzt.</strong> Die Serverlogs stehen
+          weiterhin an ihrer bisherigen Stelle.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,2 @@
+[Service]
+ExecStartPre=-/usr/bin/python3 @REPO_DIR@/runtime/prefix_ram.py image-start

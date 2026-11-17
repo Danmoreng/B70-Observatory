@@ -1,0 +1,53 @@
+[Unit]
+Description=Local AI B70 isolated coding runner
+After=network-online.target user@{{USER_ID}}.service
+Wants=network-online.target user@{{USER_ID}}.service
+Wants=local-ai-b70-release-helper.service
+After=local-ai-b70-release-helper.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{RELEASE_ROOT}}/current
+EnvironmentFile={{RUNNER_ENV_FILE}}
+Environment=XDG_RUNTIME_DIR=/run/user/{{USER_ID}}
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{{USER_ID}}/bus
+# EnvironmentFile values override Environment= assignments regardless of their
+# textual order. Put release-owned paths on ExecStart so a development value in
+# runner.env can never move trusted helpers back inside the mutable repository.
+ExecStart=/usr/bin/env B70_RUNNER_SUPPORT_ROOT={{RELEASE_ROOT}}/current/runtime B70_RUNNER_RELEASE_SOCKET=/run/local-ai-b70-release-helper/control.sock {{NODE_BINARY}} {{RELEASE_ROOT}}/current/runner.mjs
+Restart=always
+RestartSec=5s
+TimeoutStopSec=10s
+KillMode=mixed
+RuntimeDirectory=local-ai-b70-runner
+RuntimeDirectoryMode=0750
+StateDirectory=local-ai-b70-runner
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+# Do not add ProtectKernelTunables, ProtectKernelLogs or RestrictSUIDSGID here:
+# their syscall filters prevent bubblewrap from constructing the child mount,
+# PID and user namespaces. The untrusted child itself drops every capability.
+LockPersonality=true
+RestrictRealtime=true
+# bubblewrap needs AF_NETLINK to initialise loopback inside the new, otherwise
+# empty network namespace. The job still receives no host/LAN interface.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Registered repositories are constrained to these configured roots. The
+# runner still exposes only one validated repository to each networkless job.
+ReadWritePaths=/var/lib/local-ai-b70-runner /run/local-ai-b70-runner {{RUNNER_PROJECT_ROOTS}}
+ReadOnlyPaths={{RELEASE_ROOT}}
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

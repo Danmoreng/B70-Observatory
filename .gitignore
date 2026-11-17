@@ -11,3 +11,5 @@ __pycache__/
 .venv/
 .work/
 benchmark-results/
+/diffusion-desk/public/
+/dashboard/target/

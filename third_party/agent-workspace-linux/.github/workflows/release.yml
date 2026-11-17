@@ -1,0 +1,151 @@
+name: Release
+
+# Trigger on version tags (e.g. v0.1.0) or manual dispatch.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# Write permission is required to create the GitHub Release and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    # fail-fast: false so a failure on one arch doesn't cancel the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # x86_64 native build on a standard Linux runner.
+          - target: x86_64-unknown-linux-gnu
+            runs-on: ubuntu-latest
+          # aarch64 native build on GitHub's free ARM64 runner (public repos).
+          # Using a native runner avoids cross-compiling gpui's X11/Wayland/
+          # xkbcommon-x11 system deps with a foreign-arch sysroot, which is
+          # fragile for this dependency tree. Requires the repository to be
+          # public (free-tier ARM64 runners are public-repo-only on GitHub).
+          - target: aarch64-unknown-linux-gnu
+            runs-on: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runs-on }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Install the same system packages as ci.yml so the gpui / X11 / Wayland
+      # / xkbcommon build succeeds.  Source: .github/workflows/ci.yml (the
+      # authoritative list); the README carries a shorter runtime-only subset.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bubblewrap \
+            imagemagick \
+            libfontconfig1-dev \
+            libssl-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-icccm4-dev \
+            libxcb-image0-dev \
+            libxcb-keysyms1-dev \
+            libxcb-randr0-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-util-dev \
+            libxcb-xfixes0-dev \
+            libxcb-xinerama0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            openbox \
+            pkg-config \
+            x11-utils \
+            xauth \
+            xclip \
+            xdotool \
+            xvfb
+
+      - name: Install Rust (stable) with target
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          # Register the rustup target so cargo can cross-compile; on the
+          # native ARM runner this is still needed when --target is passed.
+          targets: ${{ matrix.target }}
+
+      # Cache keyed per target so x86_64 and aarch64 don't overwrite each other.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      # The npm wrapper expects assets named agent-workspace-linux-<target>.
+      # cargo places the binary at target/<target>/release/agent-workspace-linux,
+      # so rename it before upload. This naming is a CONTRACT; postinstall also
+      # expects a matching agent-workspace-linux-<target>.sha256 sidecar.
+      - name: Rename binary for release asset
+        run: |
+          cp target/${{ matrix.target }}/release/agent-workspace-linux \
+             agent-workspace-linux-${{ matrix.target }}
+
+      - name: Generate checksum sidecar
+        run: |
+          sha256sum agent-workspace-linux-${{ matrix.target }} \
+            > agent-workspace-linux-${{ matrix.target }}.sha256
+
+      # Upload to the GitHub Release only when triggered by a version tag.
+      # workflow_dispatch without a tag skips this step (avoids a missing-tag
+      # error) while still exercising the build.
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            agent-workspace-linux-${{ matrix.target }}
+            agent-workspace-linux-${{ matrix.target }}.sha256
+          generate_release_notes: true
+
+  # After both target binaries are attached to the Release, publish the npm
+  # wrapper so `npm install -g @agent-sh/agent-workspace-linux` resolves the new version.
+  # The wrapper's postinstall downloads the matching binary and verifies its
+  # `.sha256` sidecar from the Release, so those assets must exist first — hence
+  # `needs: build`.
+  #
+  # NOTE: NPM_TOKEN must be able to *create* the package on the FIRST publish.
+  # A package-scoped granular token cannot create a not-yet-existing package
+  # (npm returns 404 on PUT); do the initial publish with a create-capable token
+  # (or `npm login` + `npm publish ./npm`), after which this job maintains it.
+  npm-publish:
+    name: Publish npm wrapper
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm publish --provenance (OIDC attestation)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Stamp wrapper version from the tag
+        working-directory: npm
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm
+        working-directory: npm
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

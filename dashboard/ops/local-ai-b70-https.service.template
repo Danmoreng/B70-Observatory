@@ -1,0 +1,20 @@
+[Unit]
+Description=Local AI B70 HTTPS and iPad certificate setup
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart=/usr/bin/node %h/.local/libexec/local-ai-b70-https.mjs
+Environment=B70_TLS_ROOT=%h/.local/share/local-ai-b70-tls
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+UMask=0077
+MemoryMax=192M
+TasksMax=32
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,10 @@
+node_modules
+dist
+package-lock.json
+
+# Externe Review-Dokumente werden nicht automatisch formatiert
+docs/reviews/*
+
+# Imported libraries and generated scoped upstream stylesheet
+vendor/diffusion-desk
+packages/web/src/studio/bootstrap-scoped.css

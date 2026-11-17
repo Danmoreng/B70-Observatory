@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+for dependency in curl jq timeout; do
+  if ! command -v "$dependency" >/dev/null; then
+    printf 'Missing watchdog dependency: %s\n' "$dependency" >&2
+    exit 1
+  fi
+done
+unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+unit_file="$unit_dir/b70-qwen38-vllm.service"
+mkdir -p "$unit_dir"
+sed "s|@REPO_DIR@|$repo_dir|g" \
+  "$repo_dir/systemd/b70-qwen38-vllm.service.in" > "$unit_file"
+sed "s|@REPO_DIR@|$repo_dir|g" \
+  "$repo_dir/systemd/b70-qwen38-inference-watchdog.service.in" > "$unit_dir/b70-qwen38-inference-watchdog.service"
+cp "$repo_dir/systemd/b70-qwen38-inference-watchdog.timer" "$unit_dir/"
+sed "s|@REPO_DIR@|$repo_dir|g" "$repo_dir/systemd/b70-prefix-ram.service.in" > "$unit_dir/b70-prefix-ram.service"
+mkdir -p "$unit_dir/diffusion-desk-comfyui.service.d"
+sed "s|@REPO_DIR@|$repo_dir|g" "$repo_dir/systemd/diffusion-desk-prefix-ram.conf.in" > "$unit_dir/diffusion-desk-comfyui.service.d/40-prefix-ram.conf"
+systemctl --user daemon-reload
+systemctl --user enable --now b70-qwen38-vllm.service
+systemctl --user enable --now b70-qwen38-inference-watchdog.timer
+systemctl --user status --no-pager b70-qwen38-vllm.service

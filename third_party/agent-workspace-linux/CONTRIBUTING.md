@@ -1,0 +1,134 @@
+# Contributing
+
+Thanks for taking a look. This project is pre-1.0, so small focused changes with
+strong evidence are much easier to review than broad rewrites.
+
+## Prerequisites
+
+You need:
+
+- **Rust toolchain** — install via [rustup](https://rustup.rs/)
+- **System dependencies** (Debian/Ubuntu):
+
+```bash
+sudo apt install xvfb openbox xdotool xauth x11-utils imagemagick xclip \
+    dbus-daemon pkg-config libxkbcommon-x11-dev
+```
+
+## Build
+
+```bash
+cargo build --locked
+cargo run -- doctor   # quick self-check
+```
+
+## Quality Gates
+
+Install the test runner once, then run the gates before pushing:
+
+```bash
+cargo install cargo-nextest --locked
+```
+
+```bash
+cargo fmt --check
+cargo clippy --locked -- -D warnings
+cargo nextest run --locked
+git diff --check
+```
+
+All gates must pass. `cargo test --locked` remains supported when nextest is
+unavailable. The dev and test profiles retain file and line information in
+backtraces without full type and variable debug information. Release profiles
+are unchanged.
+
+The package currently has only a binary target. When a library target is added,
+also run `cargo test --locked --doc`: nextest does not run documentation tests.
+CI detects those targets and keeps that check separate.
+
+The installer smoke can reuse a binary you already built:
+
+```bash
+scripts/install_smoke.sh target/debug/agent-workspace-linux
+```
+
+It runs the real installer in a disposable checkout and checks the installed
+binary, skill and config cleanup. With no argument it builds and tests the
+release binary as before.
+
+To inspect a slow local build, run `cargo build --locked --timings` and open
+`target/cargo-timings/cargo-timing.html`. The committed configuration works on
+stable Rust with its default linker; machine-specific linker settings belong
+in your own Cargo configuration.
+
+## Integration Smoke Test
+
+For changes that touch runtime behaviour — MCP tool handling, permissions,
+workspace control, viewer lifecycle, browser integration, or release gates — also
+run the integration smoke:
+
+```bash
+scripts/integration_smoke.sh
+```
+
+When a real GPUI viewer is already open and you do not want the smoke to open a
+second monitor:
+
+```bash
+AGENT_WORKSPACE_NO_NEW_VIEWER=1 scripts/integration_smoke.sh
+```
+
+## Project Layout
+
+```
+agent-workspace-linux/
+├── src/                # Single Rust crate
+│   ├── main.rs         # Binary entry point
+│   ├── server.rs       # MCP server core
+│   ├── workspace.rs    # Workspace lifecycle
+│   ├── permissions.rs  # Permission ceiling enforcement
+│   ├── viewer.rs       # GPUI live viewer
+│   ├── browser.rs      # Workspace browser integration
+│   ├── agent.rs        # Agent context helpers
+│   ├── control.rs      # Live control state (active/read_only/paused)
+│   ├── guardrails.rs   # Action guardrails
+│   ├── profile.rs      # Profile management
+│   ├── launch.rs       # Launch environment of workspace apps
+│   ├── session.rs      # Session model and backend dispatch
+│   ├── session/
+│   │   └── x11.rs      # X11/Xvfb/Openbox session adapter
+│   └── approval.rs     # Human approval gate
+├── scripts/            # Shell and Python smoke/QA scripts
+├── skills/             # MCP skill definitions
+└── docs/               # Additional documentation
+```
+
+## Pull Requests
+
+- Keep PRs small and focused on a single concern.
+- Include evidence that the change works: test output, smoke run excerpt, or
+  `doctor` output as appropriate.
+- Describe what changed and why; reviewers should not have to guess intent.
+- All four gates plus `scripts/integration_smoke.sh` must pass for any change
+  touching runtime behaviour.
+
+## Release Model
+
+Releases are tagged manually. A human final-diff review of all changes precedes
+any version tag. `.github/workflows/release.yml` is the authoritative release
+path: on version tags it builds and uploads GitHub Release binaries plus
+matching `.sha256` sidecars, then publishes the npm wrapper from the same
+workflow. There is no separate npm release workflow or automated release cut.
+The npm wrapper's postinstall script treats the sidecar as part of the release
+contract and fails installation if it is missing or does not match the binary.
+
+## Public Hygiene
+
+- Do not commit `target/`, `.codex/`, copied browser profiles, local MCP config,
+  real account data, or generated release evidence.
+- Keep browser/account dogfood reports metadata-only. Raw logged-in page text,
+  links, headings, and account details do not belong in tracked files.
+- Keep default MCP usage clean: no `--permissions` means no MCP-level ceiling;
+  locked permission mode is opt-in through an explicit permissions file.
+- Prefer repo-owned MCP/CLI evidence over host browser bridges or external
+  automation when validating this runtime.

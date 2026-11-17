@@ -1,0 +1,88 @@
+"""Validated production runtime overlay on the immutable EXL3 base release."""
+import hashlib
+import json
+import os
+from pathlib import Path
+
+
+def checkout_path(root, value):
+    """Resolve an attested file/directory within this release checkout."""
+    relative = Path(value)
+    if relative.is_absolute() or '..' in relative.parts:
+        raise RuntimeError('RAM-KV path must remain inside the release checkout')
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root.resolve()):
+        raise RuntimeError('RAM-KV path must remain inside the release checkout')
+    return path
+
+
+def load_overlay(repo, release, environ=None):
+    attestation = release.get('ram_kv_runtime')
+    if attestation is None:
+        return None
+    root = Path(repo)
+    path = checkout_path(root, attestation['path'])
+    raw = path.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != attestation['sha256']:
+        raise RuntimeError('RAM-KV release manifest changed')
+    data = json.loads(raw)
+    if data['status'] != 'PRODUCTION' or data['base_image_id'] != release['image_id']:
+        raise RuntimeError('RAM-KV runtime release identity mismatch')
+    expected = {'kv_admission.py', 'xpu_cpu_offload.py'}
+    switch_ram = data.get('switch_ram_gib')
+    if switch_ram is not None:
+        if switch_ram != 8:
+            raise ValueError('The switch RAM limit is 8 GiB')
+        expected.update({'prefix_ram.py', 'switch_cache.py'})
+    if set(data['runtime_sha256']) != expected:
+        raise RuntimeError('Unexpected RAM-KV runtime modules')
+    runtime_directory = data.get('runtime_directory', 'runtime')
+    runtime = checkout_path(root, runtime_directory)
+    for name, digest in data['runtime_sha256'].items():
+        if hashlib.sha256((runtime / name).read_bytes()).hexdigest() != digest:
+            raise RuntimeError('RAM-KV module changed: ' + name)
+    env = os.environ if environ is None else environ
+    # OffloadingConnector prefers LBHNC. The frozen EXL3 oneDNN/M04 guards
+    # require token-major strides, so use vLLM's validated explicit override.
+    layout = data.get('kv_cache_layout')
+    if layout != 'LBNHC':
+        raise RuntimeError('RAM-KV release requires the validated LBNHC layout')
+    if env.get('VLLM_KV_CACHE_LAYOUT', layout) != layout:
+        raise RuntimeError('Production profile override: VLLM_KV_CACHE_LAYOUT')
+    budget = int(env.get('B70_KV_RAM_GIB', str(data['default_cpu_gib'])))
+    if not 1 <= budget <= 12:
+        raise ValueError('B70_KV_RAM_GIB must be an integer from 1 to 12 GiB')
+    overlay = {'sha256': attestation['sha256'], 'cpu_gib': budget,
+            'runtime_directory': runtime_directory,
+            'environment': {'VLLM_KV_CACHE_LAYOUT': layout},
+            'scheduler': 'kv_admission.CompletionReservedScheduler', 'watermark': '0.05',
+            'transfer': {'kv_connector': 'OffloadingConnector', 'kv_role': 'kv_both',
+                         'kv_connector_extra_config': {
+                             'cpu_bytes_to_use': budget * 1024**3,
+                             'spec_name': 'BoundedXPUOffloadingSpec',
+                             'spec_module_path': 'xpu_cpu_offload',
+                             'blocks_per_chunk': 1, 'eviction_policy': 'arc', 'store_threshold': 0}}}
+    if switch_ram:
+        overlay['switch_ram_gib'] = switch_ram
+        overlay['transfer']['kv_load_failure_policy'] = 'recompute'
+        extra = overlay['transfer']['kv_connector_extra_config']
+        extra.update(spec_name='SwitchCacheSpec', spec_module_path='switch_cache',
+                     tier_poll_interval_s=0, secondary_tiers=[{
+                         'type': 'SwitchRamTier', 'module_path': 'switch_cache',
+                         'release_id': hashlib.sha256(json.dumps(release, sort_keys=True).encode()).hexdigest(),
+                     }])
+    return overlay
+
+
+def serving_arguments(argv, overlay):
+    args = list(argv)
+    if overlay is None:
+        return args
+    for flag, value in [('--watermark', overlay['watermark']),
+                        ('--scheduler-cls', overlay['scheduler']),
+                        ('--kv-transfer-config', json.dumps(overlay['transfer']))]:
+        if flag in args:
+            index = args.index(flag)
+            del args[index:index + 2]
+        args += [flag, value]
+    return args

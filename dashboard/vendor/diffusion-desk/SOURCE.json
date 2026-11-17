@@ -1,0 +1,32 @@
+{
+  "repository": "Diffusion Desk",
+  "sourceRevision": "cda0ebcfaf61ca77c48f8aabae84208496524d81",
+  "sourceWasDirty": true,
+  "importedAt": "2026-11-15",
+  "files": {
+    "server/comfyui/app.mjs": "39911bb438a63fb0936e6134ce7b55504eea61c5ab3717065e18f38dab858e83",
+    "server/comfyui/deletion.mjs": "11adf5158d47e40fdf529e6b96028bb584da8c1d1f32d4bfc775304f0014636e",
+    "server/comfyui/expansion.mjs": "140aed69a23b933b7dd2d3635eb5e2511e1a3f77ef8a79af59433c386b0bbcb6",
+    "server/comfyui/gallery.mjs": "fc8932cd2c337a69eb8cf74ee6125c7766e172c6fd4e753a706f78e2ec88c23d",
+    "server/comfyui/jobs.mjs": "d019e3ea18a65c1b09ec7ee06887dc7d26b739191c4cb9fc032dde6dcf8f1a50",
+    "server/comfyui/recipe.mjs": "2f721864c75181baffed544e01b48b1b84411bd9ff6d38e83426df10c5bfef41",
+    "server/comfyui/references.mjs": "76b01003e10ccef8c09a6d41c05354dfc2c2dc1bf52e22c7e850fc034448ac0c",
+    "server/comfyui/workflow.json": "b58bbd5052d3b8106fdc6bd70b22b730067964a6db78125c339b2b7bc2435e67",
+    "webui/src/comfyui/ComfyDesk.vue": "8eedd67880fde386de4e9db174a881154cdac718c9118d2295561907e7418484",
+    "webui/src/comfyui/DeleteImageDialog.vue": "594aaef0401033877a7204d3c99bfa8493386bd082fcb1d47ddc9cf07b64d28b",
+    "webui/src/comfyui/DeskGallery.vue": "19048206d5582306e2ee0168a73631f89c432d039847df712ebb069d7aa357bd",
+    "webui/src/comfyui/ImageViewer.vue": "e324d342c188164ff2d2d9dd1a7f99630011fe47ee7d253d278267ef69657b6d",
+    "webui/src/comfyui/PromptExpansionDialog.vue": "c34993d674533faf8611cb5e6109bfde1f61513f65353ddb2cd01d86146e8c1d",
+    "webui/src/comfyui/ReferencePanel.vue": "6d1bed4aa1e9be1d198e640690b32814859fca079569a772a6decc8c63a70118",
+    "webui/src/comfyui/desk.css": "b1a152c2f012fea3810669608c3584a8ae22db203a8b7fce5f3ace914a22cc6b",
+    "webui/src/comfyui/desk.ts": "fe87c3dad48755fa65de16a3e774bc46c9737c30125cde1da934f2c22b874a09"
+  },
+  "changes": [
+    "Mounted behind Observatory session/origin checks without a second listener",
+    "Central GPU scheduling and durable restoration",
+    "Qwen 27B gateway enhancement replaces the ComfyUI 4B expander",
+    "Coordinated deletion of private agent image artifacts",
+    "Vue studio uses Observatory routes and scoped Islands/Bootstrap styles",
+    "Restore original Islands controls without increasing Bootstrap specificity; include the existing 1024-square Comfy preset for legacy gallery reuse"
+  ]
+}

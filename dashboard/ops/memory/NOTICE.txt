@@ -1,0 +1,7 @@
+The embedding algorithm and hybrid retrieval design derive from BetterSearch
+commit 327d8c87b3b9f543a3a9103f1e95553e4b5471b9 (MIT).
+https://github.com/Danmoreng/BetterSearch
+llama.cpp: MIT, The ggml authors; pinned source includes its complete LICENSE.
+sqlite-vec 0.1.9: MIT, Alex Garcia; see sqlite-vec-LICENSE.txt. https://github.com/asg017/sqlite-vec
+nlohmann/json 3.12.0: MIT, Niels Lohmann; see json-LICENSE.txt.
+EmbeddingGemma 2 weights: fetched separately, not part of this runtime artifact.

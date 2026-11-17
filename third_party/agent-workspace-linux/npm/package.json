@@ -1,0 +1,42 @@
+{
+  "name": "@agent-sh/agent-workspace-linux",
+  "version": "0.6.4",
+  "description": "Background Linux desktops for AI agents: the MCP server binary wrapper.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agent-sh/agent-workspace-linux.git",
+    "directory": "npm"
+  },
+  "homepage": "https://github.com/agent-sh/agent-workspace-linux#readme",
+  "bugs": {
+    "url": "https://github.com/agent-sh/agent-workspace-linux/issues"
+  },
+  "keywords": [
+    "mcp",
+    "linux",
+    "desktop",
+    "automation",
+    "workspace",
+    "agent"
+  ],
+  "os": ["linux"],
+  "cpu": ["x64", "arm64"],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "agent-workspace-linux": "bin/agent-workspace-linux.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "files": [
+    "bin/agent-workspace-linux.js",
+    "scripts/postinstall.js",
+    "README.md"
+  ]
+}

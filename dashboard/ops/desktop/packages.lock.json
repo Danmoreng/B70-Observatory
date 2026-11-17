@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "distribution": "Manjaro stable snapshot 2026-11-01",
+  "packages": [
+    {
+      "name": "xorg-xauth",
+      "version": "1.1.5-1",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/xorg-xauth-1.1.5-1-x86_64.pkg.tar.zst",
+      "sha256": "df9e0d1f29ae0135a49b17157841a4cc7c97869f9f27fd7480fff64f9afb94b7",
+      "signature": "iQEzBAABCgAdFiEErcih/MFeAdRTEEGelGV6sg8qCSsFAmlZhKcACgkQlGV6sg8qCSsCtwf/VA5OraTFzS4r23pAqz2wHDEDCcGHgLmTRq3GEHqn3rnhZXqs540VivfO0XeyLF2UIX4CsN3CIYHF6vOd3xvNSTp1kqtTIWABy32a1fAVCFKhLrfzQAYExensb4CTBAvFPsp8oD+PKKjYgaLHYr4oJN3kpIXiM5pP0/W4XxRxfULkfXgXXLRl4xqU7xMeJQnX22//zBsuwMwi6OwLduFX+bb0mrta8H2pljsUmU+nzla+1s99j2zdBp+W1H+bqbyzlycdaG54T+kIoDxLL8RjBZR+Sg3gIUj5GZepmDmQrJglaiLA+cvcRtiwiiQu8ZVXCigjgzeX246xsiitLUmK+w==",
+      "size": 24920,
+      "licenses": ["MIT-open-group"],
+      "upstream": "https://gitlab.freedesktop.org/xorg/app/xauth"
+    },
+    {
+      "name": "xorg-server-xvfb",
+      "version": "21.1.24-1",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/xorg-server-xvfb-21.1.24-1-x86_64.pkg.tar.zst",
+      "sha256": "fec274b876d775b2a3a92aad0fd430b554b521ad0f72565c7ed6965e28c75c54",
+      "signature": "iQEzBAABCgAdFiEEaI6PgoedDiXOVBQmFQwgB0PtRtgFAmpOneEACgkQFQwgB0PtRthpFQf8Du53txA4jrfRf4AzcN1ijF3YXo0qyZp1YOtU77gDCbBlQSDr1xPntb1b7UrCrdysDHIfmFQWchkWMtqgaI8/KACI8LMV+6jMk6IGeaghqVfU8YgkSwWIJWHMzsHiYiw3DIehMT9hGd3qUmCFrXjvnfE1vNhsHcspnhQWyLutDYoTb3XIp/VQXRxw9ISjEDvv6P00Q3h4gLqcwV2F9KK12EFpY/9ObgY3my3fBbdxvqqA7VXBv5902fjxCGT9iIXgBr2posJIeZ7A8PGI4mpdfGWwaN8AjFttlUdyvoaiDEf6BGaAMEQjfTrmcAFxM2dm4qAFzuNbVnzok60ZOVHrTw==",
+      "size": 1033218,
+      "licenses": ["MIT", "GPL-2.0-only"],
+      "upstream": "https://xorg.freedesktop.org"
+    },
+    {
+      "name": "openbox",
+      "version": "3.6.1-14",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/openbox-3.6.1-14-x86_64.pkg.tar.zst",
+      "sha256": "7c8deb1ac2c05cc3c47cb22c430e8a5ebf2eb9cc5ccfab32760eb126cf946fb1",
+      "signature": "iQIzBAABCgAdFiEEFORv5f1p8uKH4kTbYyw8wNHJyvYFAmjteTsACgkQYyw8wNHJyvaQIQ/+OWjv0U/RJN2G01jlOMOpNGHoAOKx1300xrs/rvjSgAsx+EanTVX4MOXtd5f2/vZuV7Tj9Ktw7mh/33/xQGLDy+M1dZ9huk/dMWhaPkCwSfQi+BeJP7Zm4YFWK3NxPgBhvANWqyMZtJTq+A9XMo8gHhKp8Sa5EEXJPQ/+YESTvKSwvypyhTzzb58azpaDThSlVY/E2W324no+O7VC0pGK8PGaE9QrcBdoS939J8F7USyJAtGgeOBYZfJ+W3DScsd91x9OUUaR6yR/a0LqUX6hnDBIPyaAZMr8BcGw9hSZfVu3Sr5SmzsVeuVKG7Ebl38gsJ55CHi+FFtaIhrqzUSG1A25OP55Y0oPQLv/AwketwTSt3zpW3+Po5yPyTXQnxoI6kTp6d2eUIl0p2UW20AcADqbTy8Tr187HletZZ/t3w4CQJaKpnMss2ZhioL4r6Z/1ZBpkoz7AXj3H6XE7miCeMJBIOdxv/D2eO2ql4UpM5U6Ak4R4b21sou/Uzx5yZRUwTkZ30hMNlr7LOJFWBmKAslZdUtjW9kePcLIVaSPduCt5TX1DayI724NYZJUhFwccZaBX8yp8Vabze1HGV/dxdyKgMvJBKfPKIMfIz2rWpte8rAYSjpLS4nDT+kAf0zeS6dLyLu2ZI1B3UbHFdJtSxVNzP94aLSW9mVfd/ujkPc=",
+      "size": 376159,
+      "licenses": ["GPL-2.0-or-later"],
+      "upstream": "https://openbox.org/"
+    },
+    {
+      "name": "xdotool",
+      "version": "4.20260303.1-1",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/xdotool-4.20260303.1-1-x86_64.pkg.tar.zst",
+      "sha256": "e215cac06133496d8ecd3ac7e456cacffed69fc52d28485891d346f7a15edcba",
+      "signature": "iHUEABYKAB0WIQTrPXZP9dh+CBij4OXwXowSExrrXgUCabb66gAKCRDwXowSExrrXsadAP4uLQgcRcQdWJKXfayS8wXMcNE4L9/HZrrXfc7ILqI5BwEAzfX/eAa/VrazrFPGecMnmZ1u11m9h2fnbDHtR7UeFQQ=",
+      "size": 70804,
+      "licenses": ["BSD-3-Clause"],
+      "upstream": "https://www.semicomplete.com/projects/xdotool/"
+    },
+    {
+      "name": "xorg-xdpyinfo",
+      "version": "1.4.0-1",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/xorg-xdpyinfo-1.4.0-1-x86_64.pkg.tar.zst",
+      "sha256": "b916eef928cf877941d6b0fc20df3bafcb6b964287fc45c273507a1ebd4cf62a",
+      "signature": "iQEzBAABCgAdFiEErcih/MFeAdRTEEGelGV6sg8qCSsFAmieOZ8ACgkQlGV6sg8qCSs1Cwf/cZUCO77NXJ8E603ZOuH99q9Sa0oHT4emGm6f9G4E0oJHDo5s3wklfuD+bPxgx4WtLHJPJg3EvVbEzAyVRJCUxZvML/BEBJ8zB3UZ9CZq0Uw4Yw7D0+7JfCxGRtPiS31e/tvsblXcOE2GHC2iifHH6e7SkEOWNya5c3TWL8VPPM+6uvEmSPrNTrdKyDuWAMmNx0/zDUyTEXFIfF9rog+yxEY24PEEMyiGVnvITUbtvRwtqlgmhJgVoOxIU5UDObix3FPLHdjxRiZ45ENw0U1btFTTtPFsDXfPAcR/GWAoF2BEyh0z+McniV9gtn0Kwb/KbW4wQv+kC2eAdkfdTvTuNw==",
+      "size": 16529,
+      "licenses": ["MIT"],
+      "upstream": "https://xorg.freedesktop.org/"
+    },
+    {
+      "name": "xorg-xprop",
+      "version": "1.2.8-1",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/xorg-xprop-1.2.8-1-x86_64.pkg.tar.zst",
+      "sha256": "05dcc5b1d6616fd7566f6616bc0868b72c1028c011b95732f445db76217f8510",
+      "signature": "iQEzBAABCgAdFiEErcih/MFeAdRTEEGelGV6sg8qCSsFAmc1p1EACgkQlGV6sg8qCSuI9wgAhQgyu/TzvUFbT/8Hm/RSufOz8vc5HenSkTuIzggBtfgJvO/zaqbdF/Ia0VPfRXn+rC8pMiCUV/a3T33GkGf5Dqa9Gb+zK0TgHMV2GZ4vAnoQSwvs8CsYuMDIp4KEsGHL87SSxGgIwtd0yyIMGQet649Y2OgVIqOYZBRd39xBolAD4VIrkckd/eULu2UZJFAv1xyGQZYSlBOoyWDs2c8AS6jHaCBKNoAcQTzBYiOL0KAo6YjugD4rS7mz0nO8dYE7ZT6YIBa4CU35su7azi4pJqEOWb6fgPuwiaD8ASmeQCGkpfXLJU8DJtQI9/V2udcPD8CQLOO9mXQQ68ecfwQcwg==",
+      "size": 26380,
+      "licenses": ["MIT-open-group"],
+      "upstream": "https://gitlab.freedesktop.org/xorg/app/xprop"
+    },
+    {
+      "name": "xorg-xwininfo",
+      "version": "1.1.7-1",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/xorg-xwininfo-1.1.7-1-x86_64.pkg.tar.zst",
+      "sha256": "f3381694c21bff02406d22c1cbb4454c38ce20920f703f5b70711124360104e2",
+      "signature": "iQEzBAABCgAdFiEErcih/MFeAdRTEEGelGV6sg8qCSsFAmpeYfAACgkQlGV6sg8qCSudagf/egHdp99nZCL0N3VOOPTNOiduukDEPIN23lzNKQnfm7LKYaRVd7ZCFm1yHdnto6YlIo+kJGCR+bwaOL36NGT8oyIFtZXAwaxHw7Q1RKZR+L+X/LfrgIZATlcbX0+0Z8D0sHtQK8edfTEzmQlgP5wPjFk4armLVeOAIFxiISnDwbBLcv3edDwIwSwpiGC8iekgS/sdBAexlHPv3N5WJUfxzrZIhxmGgKjfvDHXI/Pv4wOiidnp/i9im9Ct4sRE+2VjacHfWDzagmTWXX/W1Aed/0BBy86XmepxPwNWeP6WnspEgQ6x6mJqTEriw7Fix4zjP91UtyGARiU1Yjur4Mhkvg==",
+      "size": 23982,
+      "licenses": ["MIT"],
+      "upstream": "https://xorg.freedesktop.org/"
+    },
+    {
+      "name": "wmctrl",
+      "version": "1.07-6",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/wmctrl-1.07-6-x86_64.pkg.tar.zst",
+      "sha256": "61c73328483b5bd45fe623308b5e73c723d8dbbbe9747bbb24d34043ee670366",
+      "signature": "iQIzBAABCAAdFiEEtZcfLFwQqaCMYAMPeGxj8zDXy5IFAl8Ed6UACgkQeGxj8zDXy5IUexAApBGAafmT+cTAq6lv5vs4bC089EbT9QuZhfXxyPGnvLpkZsTH+cw/L9L+iFpS3Q0K4dBo+OvOhB9GZDEsKUp55/QNutsYkbkrbpMT8/agbPpRwcsnGPhVfueX0NgeAHzQKZ1u0Da+3kLcMeZQwkpQacs2uYSlPqJCWiUv6F6HHdg48JgJ8wYivBF702ReDGDPPRltvRQFvnybKqHfJUg2VWUl6aLZINyEjwz0o++H8HGKkLFTTF0zPtdQhDIMXswnEBgv6dGB6DpAxRQtpZe6kOVWDy0nmq1OnKJuMXYYZAgjxgkt7nveOIpxNUCtfV9cIFbDNdHArVnKeL12Oj95Lun1o6OQhsaWF69VJDZQ8mXndVRLWONSMJxyWpCPogBa1FpL5XL57DxoNvt8j3fmSjK4b6CS4N9JcAGh0aRY+sldsi8MuZ27vhPT5o7cdGBONMbsrCU35J+jsa5WBplep5FLhApsSyVIJxJcFQ79Mcevcp244AG911ZYPNFId2zx25gP9X0+kkzgt70VRrVtqXCEMDspWFEOY5FVbNmtLoM2AAAlflGNWagOVm+Hh5sieYBStnBl4l4R3QO0hUtAvD/D9lkVc/YRjbyTqRwQmKAbGV4l68CyUJJfNTz0rVuE2qnsoB/c2uWyDePT/UtdD/yL5Ln9zXmcDNE3ZC0Ogik=",
+      "size": 18908,
+      "licenses": ["GPL"],
+      "upstream": "http://tripie.sweb.cz/utils/wmctrl/"
+    },
+    {
+      "name": "xclip",
+      "version": "0.13-6",
+      "url": "https://mirror.init7.net/manjaro/stable/extra/x86_64/xclip-0.13-6-x86_64.pkg.tar.zst",
+      "sha256": "1b5377a50143052c4c714941818e967ecc6b1be1a0af696ce141a88b76227ade",
+      "signature": "iHUEABYKAB0WIQRUwf0nM2HqUUojd5Pylr3lA2jGzgUCZz+1UQAKCRDylr3lA2jGzuPNAQCuH5XQAAJbWS7QmjAjE+btaNfnFArTZKnOzGZvwSBRWQD+OdfNrFWBt+2ihX+3ZEBpRSnlUwoifkSBtHZFzcNfUgo=",
+      "size": 14969,
+      "licenses": ["GPL-2.0-only"],
+      "upstream": "https://github.com/astrand/xclip"
+    }
+  ]
+}

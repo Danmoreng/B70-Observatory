@@ -1,0 +1,49 @@
+{
+  "name": "local-ai-b70-observatory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local AI B70 Observatory \u2013 observability dashboard and OpenAI-compatible gateway for the local Qwen/vLLM server",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @observatory/contracts && npm run build -w @observatory/runner && npm run build -w @observatory/server && npm run build -w @observatory/web && tsx ops/build-native-helper.ts && tsx ops/build-release-helper.ts && tsx ops/build-release-artifact.ts",
+    "dev:server": "npm run dev -w @observatory/server",
+    "dev:web": "npm run dev -w @observatory/web",
+    "start": "npm run start -w @observatory/server",
+    "test": "npm run build -w @observatory/contracts && npm run build -w @observatory/runner && npm run test -w @observatory/contracts && npm run test -w @observatory/runner && npm run test -w @observatory/server && npm run test -w @observatory/web",
+    "typecheck": "npm run build -w @observatory/contracts && npm run build -w @observatory/runner && npm run typecheck -w @observatory/contracts && npm run typecheck -w @observatory/runner && npm run typecheck -w @observatory/server && npm run typecheck -w @observatory/web && tsc -p tsconfig.ops.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "configure": "npm run build && node packages/server/dist/cli/configure-auth.js",
+    "password:change": "npm run build -w @observatory/server && node packages/server/dist/cli/configure-auth.js --password-only",
+    "configure:runner": "tsx ops/configure-runner.ts",
+    "start:lan": "node --env-file=data/observatory.env packages/server/dist/index.js",
+    "acceptance:browser": "node scripts/browser-acceptance.mjs",
+    "acceptance:apps": "node scripts/app-builder-acceptance.mjs",
+    "acceptance:desktop": "node scripts/desktop-acceptance.mjs",
+    "acceptance:desktop-viewer": "node scripts/desktop-viewer-acceptance.mjs",
+    "acceptance:desktop-agent": "node scripts/desktop-agent-acceptance.mjs",
+    "install:service": "tsx ops/install-service.ts",
+    "smoke:runner": "tsx ops/smoke-runner.ts",
+    "start:runner": "node --env-file=data/runner.env packages/server/dist/runner/main.js",
+    "acceptance:browser-desktop": "node scripts/browser-desktop-acceptance.mjs",
+    "acceptance:rps-desktop": "node scripts/rps-visible-browser-acceptance.mjs",
+    "acceptance:cockpit-follow": "node scripts/cockpit-follow-acceptance.mjs",
+    "acceptance:memory": "node scripts/memory-acceptance.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.19.0",
+    "eslint": "^9.19.0",
+    "eslint-plugin-vue": "^9.22.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.21.0"
+  }
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "package": "intel-gmmlib",
+    "url": "https://ftp.nluug.nl/pub/os/Linux/distr/manjaro/stable/extra/x86_64/intel-gmmlib-22.10.0-1-x86_64.pkg.tar.zst",
+    "sha256": "98e459f11cc5a869e642412f2d4e286ea2719f1db3012bf3d41e2a6e96cb37b6"
+  },
+  {
+    "package": "intel-graphics-compiler",
+    "url": "https://ftp.nluug.nl/pub/os/Linux/distr/manjaro/stable/extra/x86_64/intel-graphics-compiler-1:2.41.5-1-x86_64.pkg.tar.zst",
+    "sha256": "6e12e32efe5d3c0e21ab5645b47114126a1404d97aab811a562b62614da06a5f"
+  },
+  {
+    "package": "intel-compute-runtime",
+    "url": "https://ftp.nluug.nl/pub/os/Linux/distr/manjaro/stable/extra/x86_64/intel-compute-runtime-26.35.39758.10-1-x86_64.pkg.tar.zst",
+    "sha256": "466a960423cc53993aba119b84cdd8604e635967f3ab6e38a71c12301b3f568e"
+  },
+  {
+    "package": "level-zero-loader",
+    "url": "https://ftp.nluug.nl/pub/os/Linux/distr/manjaro/stable/extra/x86_64/level-zero-loader-1.32.0-1-x86_64.pkg.tar.zst",
+    "sha256": "9cf5518c86b41f4bfb0a389eeaf3d968c6bd0787a54cddfc8962ddd1436f6c5a"
+  }
+]

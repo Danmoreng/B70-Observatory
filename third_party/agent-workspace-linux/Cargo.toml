@@ -1,0 +1,51 @@
+[package]
+name = "agent-workspace-linux"
+version = "0.6.4"
+edition = "2021"
+license = "MIT"
+description = "Isolated Linux desktop workspaces for AI agents."
+readme = "README.md"
+keywords = ["mcp", "linux", "desktop", "automation", "workspace"]
+categories = ["command-line-utilities", "development-tools"]
+# Not published to crates.io: this package still uses git dependencies
+# (`gpui` is pinned to git here, and `gpui_platform` is not available on
+# crates.io), which `cargo publish` rejects. Release-on-tag ships prebuilt
+# binaries plus .sha256 sidecars via GitHub Releases
+# (.github/workflows/release.yml) and the npm wrapper. Flip this to publish
+# and add a crates step once the viewer dependencies are registry-backed.
+publish = false
+
+[dependencies]
+mimalloc = { version = "0.1", default-features = false }
+anyhow = "1.0"
+bitflags = "2.11"
+image = { version = "0.25", default-features = false, features = ["png"] }
+schemars = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.11.1"
+tokio = { version = "1.51", features = ["macros", "rt"] }
+x11rb = { version = "0.14.0", features = ["xtest", "res"] }
+
+zbus = "5.15"
+wayland-client = "0.31"
+wayland-scanner = "0.31"
+wayland-backend = "0.3"
+xkbcommon = "0.9"
+libc = "0.2"
+cosmic-client-toolkit = { git = "https://github.com/pop-os/cosmic-protocols", rev = "c0cff4db14c37ed954983158e4055aa94c7741d9" }
+cosmic-protocols = { git = "https://github.com/pop-os/cosmic-protocols", rev = "c0cff4db14c37ed954983158e4055aa94c7741d9" }
+sctk = { package = "smithay-client-toolkit", version = "0.20" }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+reis = "0.7.1"
+
+
+[profile.dev]
+# Preserve file and line numbers in backtraces without full type/variable info.
+debug = "line-tables-only"
+
+[profile.release]
+codegen-units = 1
+opt-level = 3
+lto = "fat"

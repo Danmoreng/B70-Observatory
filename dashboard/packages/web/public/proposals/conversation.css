@@ -1,0 +1,149 @@
+:root {
+  color-scheme: dark;
+  --bg: #30313a;
+  --panel: #25262b;
+  --raised: #30323a;
+  --border: #454851;
+  --text: #dcdee4;
+  --dim: #b6bac3;
+  --accent: #6aab73;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.65 system-ui,
+    sans-serif;
+}
+main {
+  max-width: 1340px;
+  margin: auto;
+  padding: 32px;
+}
+a {
+  color: #8cc6ff;
+}
+h1 {
+  font-size: 30px;
+  margin: 8px 0 16px;
+}
+h2 {
+  font-size: 21px;
+}
+h3 {
+  font-size: 13px;
+  color: var(--dim);
+  font-weight: 500;
+}
+.eyebrow {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: #92c69a;
+  margin: 30px 0 0;
+}
+.intro {
+  max-width: 850px;
+  color: var(--dim);
+}
+section {
+  margin: 38px 0;
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+}
+section > p {
+  max-width: 920px;
+}
+.comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+}
+.comparison > article {
+  min-width: 0;
+}
+.sample,
+.technical {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  margin: 8px 0;
+}
+.sample header,
+.technical header,
+.tool-heading {
+  padding: 9px 12px;
+  font-size: 11px;
+  color: var(--dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sample p {
+  padding: 0 12px 12px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.proposed-prose p {
+  font-size: 15px;
+  line-height: 1.75;
+  max-width: 68ch;
+}
+.proposed-prose header {
+  color: var(--text);
+}
+pre {
+  font:
+    12px/1.6 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 0 12px 12px;
+}
+.tool-call {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel);
+  margin-top: 8px;
+}
+.tool-call > .technical {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  margin: 0;
+}
+.tool-call > .tool-heading {
+  color: var(--text);
+  background: var(--raised);
+}
+.image-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 130px;
+  padding: 15px;
+  margin: 0 12px 10px;
+  border: 1px dashed var(--border);
+  color: var(--dim);
+  text-align: center;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  main {
+    padding: 18px;
+  }
+  .comparison {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  h1 {
+    font-size: 24px;
+  }
+}

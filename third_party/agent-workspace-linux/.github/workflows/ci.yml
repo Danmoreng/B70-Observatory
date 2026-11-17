@@ -1,0 +1,212 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust and script checks
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bubblewrap \
+            imagemagick \
+            libfontconfig1-dev \
+            libssl-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcb-icccm4-dev \
+            libxcb-image0-dev \
+            libxcb-keysyms1-dev \
+            libxcb-randr0-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-util-dev \
+            libxcb-xfixes0-dev \
+            libxcb-xinerama0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            openbox \
+            pkg-config \
+            x11-utils \
+            xauth \
+            xclip \
+            xdotool \
+            xvfb \
+            tk
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
+
+      - name: Install nextest
+        uses: taiki-e/install-action@d042af60014eb018fcd01f57f4f62118b69e3ea6 # nextest
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Build
+        run: cargo build --locked
+
+      - name: Installer smoke
+        run: scripts/install_smoke.sh target/debug/agent-workspace-linux
+
+      - name: Clippy
+        run: cargo clippy --locked -- -D warnings
+
+      - name: Test
+        run: cargo nextest run --locked
+
+      - name: Doc tests
+        # This package is currently binary-only. Keep doctests in the workflow
+        # when a library target is added; nextest never runs them.
+        run: |
+          cargo metadata --locked --no-deps --format-version 1 > target/doc-targets.json
+          if python3 -c 'import json; import sys; data = json.load(open("target/doc-targets.json")); sys.exit(not any(t["doctest"] and "lib" in t["kind"] for p in data["packages"] for t in p["targets"]))'; then
+            cargo test --locked --doc
+          else
+            echo "No library targets with doctests."
+          fi
+
+      - name: Native X11 focus regression
+        run: node scripts/x11_focus_smoke.js
+
+      - name: JavaScript syntax
+        run: |
+          for file in scripts/*.js scripts/lib/*.js; do
+            node --check "$file"
+          done
+
+      - name: Whitespace
+        run: git diff --check
+
+  # Scan Cargo.lock (including gpui git deps) for known advisories.
+  supply-chain:
+    name: Supply chain (cargo audit)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit dependencies
+        # The ignored advisories are "unmaintained"/"unsound" warnings (not
+        # exploitable vulnerabilities) for transitive crates pulled in by the
+        # gpui git dependency — not fixable from this crate until gpui upstream
+        # bumps them:
+        #   RUSTSEC-2025-0052 async-std        unmaintained
+        #   RUSTSEC-2024-0384 instant          unmaintained
+        #   RUSTSEC-2024-0436 paste            unmaintained
+        #   RUSTSEC-2026-0173 proc-macro-error2 unmaintained
+        #   RUSTSEC-2026-0186 memmap2          unsound (via gpui→fontdb/cosmic-text/xkbcommon)
+        #   RUSTSEC-2026-0192 ttf-parser       unmaintained (via gpui→fontdb/cosmic-text)
+        #   RUSTSEC-2026-0194 quick-xml        DoS in dup-attribute check — build-time
+        #   RUSTSEC-2026-0195 quick-xml        DoS in NsReader namespace alloc — build-time
+        #   RUSTSEC-2026-0206 rustybuzz        unmaintained (via gpui→fontdb/cosmic-text)
+        #   RUSTSEC-2026-0370 zvariant        retired standalone crate (via gpui Linux D-Bus)
+        #   RUSTSEC-2026-0371 zbus_names      retired standalone crate (via gpui Linux D-Bus)
+        #   RUSTSEC-2026-0372 zvariant_derive retired standalone crate (via gpui Linux D-Bus)
+        #     These three crates moved into zbus 6. GPUI's accesskit_unix and
+        #     ashpd dependencies still use zbus 5. Remove these exceptions when
+        #     that dependency chain migrates; tracked in #135.
+        #     (quick-xml 0.30/0.39 reachable only through wayland-scanner /
+        #     gpui asset pipelines parsing vendored XML at build time, never
+        #     attacker input; unignore when upstream moves to quick-xml >= 0.41)
+        # Everything else is still denied, so a real advisory fails CI.
+        run: |
+          cargo audit --deny warnings \
+            --ignore RUSTSEC-2025-0052 \
+            --ignore RUSTSEC-2024-0384 \
+            --ignore RUSTSEC-2024-0436 \
+            --ignore RUSTSEC-2026-0173 \
+            --ignore RUSTSEC-2026-0186 \
+            --ignore RUSTSEC-2026-0192 \
+            --ignore RUSTSEC-2026-0194 \
+            --ignore RUSTSEC-2026-0195 \
+            --ignore RUSTSEC-2026-0206 \
+            --ignore RUSTSEC-2026-0370 \
+            --ignore RUSTSEC-2026-0371 \
+            --ignore RUSTSEC-2026-0372
+
+  # Validate the shipped SKILL.md and any agent config via agnix.
+  # Scoped to skills/ rather than the repo root so the linter only sees the
+  # deliverable agent artifact and doesn't flag READMEs, build scripts, or src/.
+  agent-config:
+    name: Agent config (agnix)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Install agnix
+        run: npm install -g agnix
+
+      - name: Validate agent skill
+        run: agnix skills/
+
+  # Verify npm wrapper syntax, version parity with Cargo, and pack integrity.
+  # Does not download the release binary — no release exists yet.
+  npm-wrapper:
+    name: npm wrapper checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - name: Syntax check postinstall.js
+        run: node --check npm/scripts/postinstall.js
+
+      - name: Test postinstall checksum verification
+        run: node --test npm/scripts/postinstall.test.js npm/tests/*.test.cjs
+
+      - name: Syntax check agent-workspace-linux.js
+        run: node --check npm/bin/agent-workspace-linux.js
+
+      - name: Version parity (Cargo.toml == npm/package.json)
+        run: |
+          cargo_version="$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
+          npm_version="$(node -p "require('./npm/package.json').version")"
+          echo "Cargo version : $cargo_version"
+          echo "npm version   : $npm_version"
+          test "$cargo_version" = "$npm_version"
+
+      - name: Pack dry-run
+        run: cd npm && npm pack --dry-run

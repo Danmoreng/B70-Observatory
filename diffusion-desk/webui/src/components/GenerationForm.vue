@@ -1,0 +1,654 @@
+<script setup lang="ts">
+import { ref, watch, computed, onMounted } from 'vue'
+import { useGenerationStore } from '@/stores/generation'
+import LoraManager from './LoraManager.vue'
+import { GENERATION_LIMITS, DEFAULT_ASPECT_RATIOS } from '@/constants'
+
+const props = defineProps<{
+  mode: 'txt2img' | 'img2img' | 'inpainting'
+}>()
+
+const store = useGenerationStore()
+
+const aspectRatio = computed(() => {
+  const w = store.width
+  const h = store.height
+  if (!w || !h) return ''
+  const gcdValue = gcd(w, h)
+  return `${w / gcdValue}:${h / gcdValue}`
+})
+
+const commonRatios = DEFAULT_ASPECT_RATIOS
+
+const applyAspectRatio = (ratio: { w: number, h: number }) => {
+  isInternalScaleUpdate = true
+  
+  // Jump to the smallest valid resolution for this ratio
+  // Smallest unit is 16px. We need both dimensions >= 64px.
+  // multiplier * ratio.w * 16 >= 64  => multiplier * ratio.w >= 4
+  // multiplier * ratio.h * 16 >= 64  => multiplier * ratio.h >= 4
+  const minRes = GENERATION_LIMITS.MIN_RESOLUTION
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  const multiplier = Math.ceil(Math.max(minRes / (ratio.w * resStep), minRes / (ratio.h * resStep)))
+  
+  store.width = ratio.w * multiplier * resStep
+  store.height = ratio.h * multiplier * resStep
+  
+  stepW.value = ratio.w
+  stepH.value = ratio.h
+  currentSizeStep.value = multiplier
+  
+  updateStepRange()
+  setTimeout(() => { isInternalScaleUpdate = false }, 0)
+}
+
+const handleGenerate = () => {
+  if (!store.prompt || store.isGenerating || store.isModelSwitching) return
+      store.generateImage({
+      prompt: store.prompt,
+      negative_prompt: store.negativePrompt,
+      steps: store.steps,
+      seed: store.seed,
+      cfgScale: store.cfgScale,
+      strength: store.strength,
+      batchCount: store.batchCount,
+      sampler: store.sampler,
+      width: store.width,
+      height: store.height,
+      saveImages: store.saveImages,
+      initImage: (props.mode === 'img2img' || props.mode === 'inpainting') ? store.initImage : null,
+      maskImage: props.mode === 'inpainting' ? store.maskImage : null
+    })
+  }
+
+const onFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files[0]) {
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string
+      store.initImage = dataUrl
+      
+      // Get image dimensions
+      const img = new Image()
+      img.onload = () => {
+        uploadedImageWidth.value = img.width
+        uploadedImageHeight.value = img.height
+      }
+      img.src = dataUrl
+    }
+    reader.readAsDataURL(target.files[0])
+  }
+}
+
+const uploadedImageWidth = ref(0)
+const uploadedImageHeight = ref(0)
+const scaleFactor = ref(1.0)
+
+// Step-based sizing logic
+const currentSizeStep = ref(1)
+const minSizeStep = ref(1)
+const maxSizeStep = ref(256) // 4096 / 16
+const stepW = ref(8)
+const stepH = ref(8)
+let isInternalScaleUpdate = false
+
+const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a
+
+const updateStepRange = () => {
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  const unitsW = Math.round(store.width / resStep)
+  const unitsH = Math.round(store.height / resStep)
+  const common = gcd(unitsW, unitsH)
+  
+  stepW.value = unitsW / common
+  stepH.value = unitsH / common
+  currentSizeStep.value = common
+  
+  // Calculate max steps to stay within MAX_RESOLUTION
+  const maxW = Math.floor(GENERATION_LIMITS.MAX_RESOLUTION / (stepW.value * resStep))
+  const maxH = Math.floor(GENERATION_LIMITS.MAX_RESOLUTION / (stepH.value * resStep))
+  maxSizeStep.value = Math.max(currentSizeStep.value, Math.min(maxW, maxH))
+  minSizeStep.value = 1
+}
+
+const useImageSize = () => {
+  if (uploadedImageWidth.value > 0 && uploadedImageHeight.value > 0) {
+    const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+    // Round to nearest multiple of RESOLUTION_STEP
+    store.width = Math.round((uploadedImageWidth.value * scaleFactor.value) / resStep) * resStep
+    store.height = Math.round((uploadedImageHeight.value * scaleFactor.value) / resStep) * resStep
+    
+    // Ensure minimum of MIN_RESOLUTION
+    if (store.width < GENERATION_LIMITS.MIN_RESOLUTION) store.width = GENERATION_LIMITS.MIN_RESOLUTION
+    if (store.height < GENERATION_LIMITS.MIN_RESOLUTION) store.height = GENERATION_LIMITS.MIN_RESOLUTION
+    updateStepRange()
+  }
+}
+
+watch(scaleFactor, () => {
+  useImageSize()
+})
+
+// Initialize range
+onMounted(() => {
+  updateStepRange()
+  store.fetchStyles()
+})
+
+// When width or height change manually, recalculate our steps
+watch([() => store.width, () => store.height], ([newW, newH]) => {
+  if (!isInternalScaleUpdate) {
+    const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+    // Only update the slider internal state if we have valid multiples of resStep
+    if (newW > 0 && newH > 0 && newW % resStep === 0 && newH % resStep === 0) {
+      updateStepRange()
+    }
+  }
+})
+
+watch(currentSizeStep, (newStep) => {
+  isInternalScaleUpdate = true
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  store.width = stepW.value * newStep * resStep
+  store.height = stepH.value * newStep * resStep
+  
+  // Use nextTick to reset flag after reactive updates propagate
+  setTimeout(() => { isInternalScaleUpdate = false }, 0)
+})
+
+const snapToNextStep = (val: number) => {
+  const minRes = GENERATION_LIMITS.MIN_RESOLUTION
+  const resStep = GENERATION_LIMITS.RESOLUTION_STEP
+  if (!val || val < minRes) return minRes
+  if (val % resStep === 0) return val
+  return Math.ceil(val / resStep) * resStep
+}
+
+const handleWidthBlur = () => {
+  store.width = snapToNextStep(store.width)
+  updateStepRange()
+}
+
+const handleHeightBlur = () => {
+  store.height = snapToNextStep(store.height)
+  updateStepRange()
+}
+
+const clearInitImage = () => {
+  store.initImage = null
+  uploadedImageWidth.value = 0
+  uploadedImageHeight.value = 0
+}
+
+// Reference Images Logic
+const referenceInput = ref<HTMLInputElement | null>(null)
+
+const onReferenceFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    for (let i = 0; i < target.files.length; i++) {
+      const file = target.files[i]
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string
+        // Check for duplicates? or just append
+        if (dataUrl && !store.referenceImages?.includes(dataUrl)) {
+           if (!store.referenceImages) store.referenceImages = []
+           store.referenceImages.push(dataUrl)
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+  // Reset input so same files can be selected again if needed
+  target.value = ''
+}
+
+const removeReferenceImage = (index: number) => {
+  if (store.referenceImages) {
+    store.referenceImages.splice(index, 1)
+  }
+}
+</script>
+
+<template>
+  <div class="island p-2 h-100 overflow-y-auto">
+    <form @submit.prevent="handleGenerate">
+      <!-- Img2Img / Inpainting Upload & Scaling -->
+      <div class="mb-3" v-if="mode === 'img2img' || mode === 'inpainting'">
+        <div v-if="mode === 'img2img'">
+          <label class="form-label">Initial Image:</label>
+          <div v-if="!store.initImage" class="image-upload-dropzone border rounded p-4 text-center" @click="($refs.fileInput as any).click()">
+            <i class="bi bi-folder display-6"></i>
+            <p class="mb-0 mt-2">Click to upload or drag & drop</p>
+            <input type="file" ref="fileInput" class="d-none" accept="image/*" @change="onFileChange" />
+          </div>
+          <div v-else class="position-relative border rounded p-2 text-center">
+            <img :src="store.initImage" class="img-thumbnail" style="max-height: 200px;" />
+            <div class="mt-2 px-3">
+              <label class="form-label d-flex justify-content-between x-small text-muted text-uppercase fw-bold mb-1">
+                <span>Upscale Factor:</span>
+                <span class="text-primary">{{ scaleFactor.toFixed(1) }}x</span>
+              </label>
+              <input type="range" class="form-range" v-model.number="scaleFactor" min="1.0" max="2.0" step="0.1">
+            </div>
+            <div class="mt-2 d-flex justify-content-center flex-wrap gap-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm" @click="useImageSize">
+                <i class="bi bi-ruler"></i> Apply Scale ({{ Math.round((uploadedImageWidth * scaleFactor) / 64) * 64 }}x{{ Math.round((uploadedImageHeight * scaleFactor) / 64) * 64 }})
+              </button>
+              <button type="button" class="btn btn-danger btn-sm" @click="clearInitImage">
+                <i class="bi bi-trash"></i> Clear
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div v-if="mode === 'inpainting' && store.initImage" class="border rounded p-2 text-center mb-3">
+            <div class="px-3">
+              <label class="form-label d-flex justify-content-between x-small text-muted text-uppercase fw-bold mb-1">
+                <span>Input Scale Factor:</span>
+                <span class="text-primary">{{ scaleFactor.toFixed(1) }}x</span>
+              </label>
+              <input type="range" class="form-range" v-model.number="scaleFactor" min="1.0" max="2.0" step="0.1">
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-1" @click="useImageSize">
+              <i class="bi bi-ruler"></i> Apply Scale to Canvas
+            </button>
+        </div>
+      </div>
+
+      <!-- Reference Images (Flux Edit / Context) -->
+      <div class="mb-3" v-if="mode === 'txt2img'">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="form-label mb-0 fw-bold small text-uppercase text-muted">Reference Images (Edit Mode)</label>
+            <button v-if="store.referenceImages && store.referenceImages.length > 0" type="button" class="btn btn-link btn-sm p-0 text-danger text-decoration-none" @click="store.referenceImages = []">
+                Clear All
+            </button>
+        </div>
+        
+        <div class="d-flex flex-wrap gap-2 mb-2" v-if="store.referenceImages && store.referenceImages.length > 0">
+            <div v-for="(img, idx) in store.referenceImages" :key="idx" class="position-relative border rounded overflow-hidden" style="width: 80px; height: 80px;">
+                <img :src="img" class="w-100 h-100 object-fit-cover" />
+                <button type="button" class="btn btn-sm btn-dark position-absolute top-0 end-0 p-0 m-1 rounded-circle d-flex align-items-center justify-content-center" style="width: 20px; height: 20px; opacity: 0.8;" @click="removeReferenceImage(idx)">
+                    <span style="font-size: 12px;">&times;</span>
+                </button>
+            </div>
+            <div class="border rounded d-flex align-items-center justify-content-center bg-body-tertiary" style="width: 80px; height: 80px; cursor: pointer;" @click="referenceInput?.click()">
+                <i class="bi bi-plus-lg text-muted"></i>
+            </div>
+        </div>
+
+        <div v-else class="image-upload-dropzone border rounded p-3 text-center" @click="referenceInput?.click()">
+            <i class="bi bi-images fs-4"></i>
+            <p class="mb-0 mt-1 small">Upload reference images (Flux Edit)</p>
+        </div>
+        <input type="file" ref="referenceInput" class="d-none" accept="image/*" multiple @change="onReferenceFileChange" />
+      </div>
+
+      <!-- Strength Slider (only if initImage exists) -->
+      <div class="mb-3" v-if="(mode === 'img2img' || mode === 'inpainting') && store.initImage">
+        <label for="strength" class="form-label d-flex justify-content-between">
+          <span>Denoising Strength:</span>
+          <span class="badge bg-primary">{{ store.strength }}</span>
+        </label>
+        <input type="range" class="form-range" id="strength" v-model.number="store.strength" min="0" max="1" step="0.01">
+        <div class="form-text text-muted small">How much to change the initial image. 1.0 = completely new image.</div>
+      </div>
+
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="d-flex align-items-center gap-2">
+            <label for="prompt" class="form-label mb-0">Prompt:</label>
+            <button 
+              type="button" 
+              class="btn btn-outline-success btn-sm py-0" 
+              style="font-size: 0.7rem; height: 20px;"
+              @click="store.enhancePrompt"
+              :disabled="store.isLlmThinking || !store.prompt"
+            >
+              <span v-if="store.isLlmThinking" class="spinner-border spinner-border-sm" style="width: 0.7rem; height: 0.7rem;"></span>
+              <span v-else><i class="bi bi-magic"></i> Enhance</span>
+            </button>
+            <div class="btn-group ms-1" role="group">
+              <button 
+                type="button" 
+                class="btn btn-outline-secondary btn-sm py-0" 
+                style="font-size: 0.7rem; height: 20px;"
+                @click="store.undoPrompt"
+                :disabled="!store.canUndo"
+                title="Undo"
+              >
+                <i class="bi bi-arrow-counterclockwise"></i>
+              </button>
+              <button 
+                type="button" 
+                class="btn btn-outline-secondary btn-sm py-0" 
+                style="font-size: 0.7rem; height: 20px;"
+                @click="store.redoPrompt"
+                :disabled="!store.canRedo"
+                title="Redo"
+              >
+                <i class="bi bi-arrow-clockwise"></i>
+              </button>
+            </div>
+          </div>
+          <button 
+            v-if="store.prompt.includes('Steps: ')"
+            type="button" 
+            class="btn btn-outline-primary btn-sm py-0" 
+            style="font-size: 0.75rem;"
+            @click="store.parseA1111Parameters(store.prompt)"
+          >
+            <i class="bi bi-stars"></i> Apply Forge Parameters
+          </button>
+        </div>
+        <textarea
+          id="prompt"
+          v-model="store.prompt"
+          @blur="store.commitPrompt"
+          rows="4"
+          class="form-control"
+          placeholder="A cinematic photograph of..."
+          required
+        ></textarea>
+      </div>
+
+      <div class="mb-3" v-show="store.cfgScale !== 1">
+        <label for="negativePrompt" class="form-label">Negative Prompt:</label>
+        <textarea
+          id="negativePrompt"
+          v-model="store.negativePrompt"
+          rows="3"
+          class="form-control"
+          placeholder="deformed, bad anatomy, blurry..."
+        ></textarea>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-end mb-1" v-if="store.currentModelMetadata">
+        <label class="x-small text-muted text-uppercase fw-bold mb-0">Parameters</label>
+        <button 
+          type="button" 
+          class="btn btn-link btn-xs p-0 text-decoration-none text-muted opacity-75 hover-opacity-100"
+          @click="store.resetToModelDefaults()"
+        >
+          <span class="small"><i class="bi bi-arrow-clockwise"></i> Reset to Model Defaults</span>
+        </button>
+      </div>
+
+      <div class="row g-2 mb-3">
+        <div class="col-md-4">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">Steps</span>
+            <input
+              type="number"
+              v-model.number="store.steps"
+              :min="GENERATION_LIMITS.MIN_STEPS"
+              :max="GENERATION_LIMITS.MAX_STEPS"
+              class="form-control"
+            />
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">Batch</span>
+            <input
+              type="number"
+              v-model.number="store.batchCount"
+              :min="GENERATION_LIMITS.MIN_BATCH_COUNT"
+              :max="GENERATION_LIMITS.MAX_BATCH_COUNT"
+              class="form-control"
+            />
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">Seed</span>
+            <input
+                type="number"
+                v-model.number="store.seed"
+                class="form-control"
+            />
+            <button type="button" class="btn btn-outline-secondary" @click="store.reuseLastSeed" title="Reuse Last Seed" :disabled="!store.lastParams">
+                <i class="bi bi-recycle"></i>
+            </button>
+            <button type="button" class="btn btn-outline-secondary" @click="store.randomizeSeed" title="Randomize Seed">
+                <i class="bi bi-dice-5"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-2 mb-3 align-items-center">
+        <div class="col-md-8">
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">Width</span>
+              <input
+                type="number"
+                v-model.number="store.width"
+                @blur="handleWidthBlur"
+                :min="GENERATION_LIMITS.MIN_RESOLUTION"
+                :max="GENERATION_LIMITS.MAX_RESOLUTION"
+                :step="GENERATION_LIMITS.RESOLUTION_STEP"
+                class="form-control"
+              />
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @click="store.swapDimensions" title="Swap Dimensions">
+              <i class="bi bi-arrow-left-right"></i>
+            </button>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">Height</span>
+              <input
+                type="number"
+                v-model.number="store.height"
+                @blur="handleHeightBlur"
+                :min="GENERATION_LIMITS.MIN_RESOLUTION"
+                :max="GENERATION_LIMITS.MAX_RESOLUTION"
+                :step="GENERATION_LIMITS.RESOLUTION_STEP"
+                class="form-control"
+              />
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">AR</span>
+            <select 
+              class="form-select font-monospace" 
+              :value="commonRatios.find(r => r.label === aspectRatio) ? aspectRatio : 'custom'"
+              @change="(e) => {
+                const val = (e.target as HTMLSelectElement).value;
+                if (val !== 'custom') {
+                  const ratio = commonRatios.find(r => r.label === val);
+                  if (ratio) applyAspectRatio(ratio);
+                }
+              }"
+              title="Change Aspect Ratio"
+            >
+              <option value="custom" v-if="!commonRatios.find(r => r.label === aspectRatio)">{{ aspectRatio }} (Custom)</option>
+              <option value="custom" v-else disabled>Preset...</option>
+              <option v-for="r in commonRatios" :key="r.label" :value="r.label">
+                {{ r.label }}
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Combined Size Slider -->
+      <div class="mb-3 px-1">
+        <label class="form-label d-flex justify-content-between x-small text-muted text-uppercase fw-bold mb-1">
+          <span>Overall Size Adjustment:</span>
+          <span class="text-primary">{{ store.width }} x {{ store.height }}</span>
+        </label>
+        <input 
+          type="range" 
+          class="form-range" 
+          v-model.number="currentSizeStep" 
+          :min="minSizeStep" 
+          :max="maxSizeStep" 
+          step="1"
+        >
+      </div>
+
+      <div class="row g-2 mb-4">
+        <div class="col-md-6">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">CFG</span>
+            <input
+              type="number"
+              v-model.number="store.cfgScale"
+              :min="GENERATION_LIMITS.MIN_CFG_SCALE"
+              :max="GENERATION_LIMITS.MAX_CFG_SCALE"
+              step="0.1"
+              class="form-control"
+            />
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">Sampler</span>
+            <select
+              v-model="store.sampler"
+              class="form-select"
+            >
+              <option v-for="s in store.samplers" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hires-fix Section -->
+      <div class="mb-4">
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="hiresFix" v-model="store.hiresFix">
+          <label class="form-check-label fw-bold" for="hiresFix">Highres-fix</label>
+        </div>
+        
+        <div v-if="store.hiresFix" class="hires-fix-container border-0 p-3 mt-2 mb-3 rounded">
+          <div class="row g-2 mb-2">
+            <div class="col-md-7">
+              <label for="hiresUpscaler" class="x-small text-muted mb-1 d-block text-uppercase fw-bold">Upscaler:</label>
+              <select id="hiresUpscaler" v-model="store.hiresUpscaleModel" class="form-select form-select-sm">
+                <option value="">None (Simple Resize)</option>
+                <option v-for="model in store.models.filter(m => m.type === 'esrgan')" :key="model.id" :value="model.id">
+                  {{ model.name }}
+                </option>
+              </select>
+            </div>
+            <div class="col-md-5">
+              <label for="hiresFactor" class="x-small text-muted mb-1 d-block text-uppercase fw-bold">Upscale by:</label>
+              <input type="number" id="hiresFactor" v-model.number="store.hiresUpscaleFactor" :min="GENERATION_LIMITS.MIN_HIRES_UPSCALE" :max="GENERATION_LIMITS.MAX_HIRES_UPSCALE" step="0.25" class="form-control form-control-sm">
+            </div>
+          </div>
+          
+          <div class="mb-2">
+            <label for="hiresDenoise" class="x-small text-muted mb-1 d-block text-uppercase fw-bold d-flex justify-content-between">
+              <span>Denoising Strength:</span>
+              <span class="text-primary">{{ store.hiresDenoisingStrength }}</span>
+            </label>
+            <input type="range" class="form-range" id="hiresDenoise" v-model.number="store.hiresDenoisingStrength" :min="GENERATION_LIMITS.MIN_DENOISING" :max="GENERATION_LIMITS.MAX_DENOISING" step="0.01">
+          </div>
+
+          <div class="row g-2">
+            <div class="col-md-12">
+              <label for="hiresSteps" class="x-small text-muted mb-1 d-block text-uppercase fw-bold">Hires Steps:</label>
+              <input type="number" id="hiresSteps" v-model.number="store.hiresSteps" :min="GENERATION_LIMITS.MIN_STEPS" :max="GENERATION_LIMITS.MAX_STEPS" class="form-control form-control-sm">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Style Selection -->
+      <div class="mb-4">
+        <label class="x-small text-muted mb-1 d-block text-uppercase fw-bold">Generation Style(s):</label>
+        
+        <div class="d-flex flex-wrap gap-1 mb-2" v-if="store.activeStyleNames.length > 0">
+          <span 
+            v-for="styleName in store.activeStyleNames" 
+            :key="styleName" 
+            class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 d-flex align-items-center gap-1"
+          >
+            {{ styleName }}
+            <span role="button" @click="store.activeStyleNames = store.activeStyleNames.filter(s => s !== styleName)" class="text-danger small" style="cursor: pointer;">&times;</span>
+          </span>
+        </div>
+
+        <select 
+          class="form-select form-select-sm border-0 bg-body-secondary shadow-none" 
+          @change="(e) => {
+            const val = (e.target as HTMLSelectElement).value;
+            if (val && !store.activeStyleNames.includes(val)) {
+              store.activeStyleNames.push(val);
+            }
+            (e.target as HTMLSelectElement).value = '';
+          }"
+        >
+          <option value="" selected disabled>+ Add Style...</option>
+          <option 
+            v-for="style in store.styles.filter(s => !store.activeStyleNames.includes(s.name))" 
+            :key="style.name" 
+            :value="style.name"
+          >
+            {{ style.name }}
+          </option>
+        </select>
+      </div>
+
+      <!-- LoRA Manager -->
+      <div class="mb-4">
+        <LoraManager />
+      </div>
+    </form>
+  </div>
+</template>
+
+<style scoped>
+.image-upload-dropzone {
+  cursor: pointer;
+  transition: all 0.2s;
+  background-color: #f8f9fa;
+  color: #6c757d;
+}
+
+[data-bs-theme="dark"] .image-upload-dropzone {
+  background-color: #2b3035 !important;
+  color: #adb5bd !important;
+  border-color: #495057 !important;
+}
+
+.image-upload-dropzone:hover {
+  background-color: #e9ecef;
+  border-color: #0d6efd !important;
+}
+
+[data-bs-theme="dark"] .image-upload-dropzone:hover {
+  background-color: #373b3e !important;
+  border-color: #3d8bfd !important;
+}
+
+.hires-fix-container {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+}
+
+[data-bs-theme="dark"] .hires-fix-container {
+  background-color: #212529;
+  border-color: #373b3e;
+}
+
+.x-small {
+  font-size: 0.7rem;
+}
+
+.btn-xs {
+  padding: 0.1rem 0.25rem;
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
+.hover-opacity-100:hover {
+  opacity: 1 !important;
+}
+</style>
