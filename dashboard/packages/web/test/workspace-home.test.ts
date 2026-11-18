@@ -42,7 +42,9 @@ it('shows measured uptime and direct recent-work links without loading the cockp
   });
   const page = mount(WorkspaceHome, { props: { system, current: true } });
   await flushPromises();
-  expect(page.find('.host-uptime').text()).toContain('2 h 01 min');
+  expect(page.find('h1').exists()).toBe(false);
+  expect(page.get('.status-cards').element.children).toHaveLength(3);
+  expect(page.get('.status-cards > .host-uptime').text()).toContain('2 h 01 min');
   expect(page.get('[data-state="active"]').text()).toContain('ComfyUI');
   expect(page.get('[data-state="active"]').text()).toContain('3 min');
   expect(page.get('[data-state="inactive"]').text()).toContain('Stopped');

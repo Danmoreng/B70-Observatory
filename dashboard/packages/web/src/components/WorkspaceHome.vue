@@ -51,28 +51,17 @@ function duration(seconds: number | undefined): string {
 </script>
 
 <template>
-  <section class="system-home" aria-labelledby="system-home-title">
-    <header class="home-heading">
-      <h1 id="system-home-title">{{ t('home.title') }}</h1>
-      <div class="host-uptime">
-        <AppIcon name="clock" />
-        <div>
-          <span>{{ t('home.uptime') }}</span
-          ><strong>{{ duration(runtimes?.hostUptimeSeconds) }}</strong>
-        </div>
-      </div>
-    </header>
-
+  <section class="system-home" :aria-label="t('sidebar.overview')">
     <section aria-labelledby="engines-heading">
       <h2 id="engines-heading">{{ t('home.engines') }}</h2>
-      <div class="engine-pair">
+      <div class="status-cards">
         <article
           v-for="engine in engines"
           :key="engine.key"
-          class="home-engine"
+          class="status-card home-engine"
           :data-state="runtimes?.[engine.key].state ?? 'unknown'"
         >
-          <div class="engine-symbol"><AppIcon :name="engine.icon" /></div>
+          <div class="status-symbol"><AppIcon :name="engine.icon" /></div>
           <div class="engine-identity">
             <span>{{ t(`home.${engine.key}`) }}</span>
             <h3>{{ engine.name }}</h3>
@@ -100,6 +89,13 @@ function duration(seconds: number | undefined): string {
                 t('home.runningFor', { time: duration(runtimes[engine.key].uptimeSeconds) })
               }}</small
             >
+          </div>
+        </article>
+        <article class="status-card host-uptime">
+          <div class="status-symbol"><AppIcon name="clock" /></div>
+          <div class="uptime-reading">
+            <span>{{ t('home.uptime') }}</span>
+            <strong>{{ duration(runtimes?.hostUptimeSeconds) }}</strong>
           </div>
         </article>
       </div>
@@ -133,56 +129,48 @@ function duration(seconds: number | undefined): string {
   align-self: start;
   padding: 12px 0;
 }
-.home-heading,
 .resource-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.home-heading h1 {
-  margin: 0;
-  font-size: clamp(22px, 3vw, 32px);
-  line-height: 1.15;
-  letter-spacing: -0.035em;
-}
 .system-home h2 {
   margin: 0 0 8px;
   font-size: 15px;
   font-weight: 600;
 }
-.host-uptime {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--dim);
-}
-.host-uptime span,
+.uptime-reading span,
 .engine-identity span {
   display: block;
   font-size: 12px;
   color: var(--dim);
 }
-.host-uptime strong {
+.uptime-reading strong {
+  font-size: 19px;
+  line-height: 1.25;
   display: block;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
-.engine-pair {
+.status-cards {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(160px, 0.55fr);
   gap: 10px;
 }
-.home-engine {
+.status-card {
   --state: var(--dim);
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 16px;
   background: var(--panel);
+}
+.home-engine {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 .home-engine[data-state='active'] {
   --state: var(--ok);
@@ -195,7 +183,7 @@ function duration(seconds: number | undefined): string {
 .home-engine[data-state='failed'] {
   --state: var(--error);
 }
-.engine-symbol {
+.status-symbol {
   display: grid;
   place-items: center;
   width: 38px;
@@ -306,21 +294,52 @@ function duration(seconds: number | undefined): string {
   font-size: 12px;
   margin: 0 0 8px;
 }
-@container (max-width: 640px) {
-  .engine-pair {
-    grid-template-columns: 1fr;
+@container (max-width: 740px) {
+  .status-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .home-engine {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: 6px;
+    padding: 12px;
+  }
+  .home-engine .status-symbol {
+    display: none;
+  }
+  .engine-reading {
+    justify-items: start;
+  }
+  .host-uptime {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .host-uptime .status-symbol {
+    width: auto;
+    height: auto;
+    border: 0;
+  }
+  .host-uptime .app-icon {
+    width: 16px;
+    height: 16px;
+  }
+  .uptime-reading {
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .uptime-reading strong {
+    font-size: 14px;
   }
 }
 @media (max-width: 600px) {
   .system-home {
     gap: 18px;
     padding-top: 4px;
-  }
-  .host-uptime .app-icon {
-    display: none;
-  }
-  .home-engine {
-    padding: 12px;
   }
 }
 </style>
