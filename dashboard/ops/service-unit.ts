@@ -3,6 +3,7 @@ export interface ServiceUnitValues {
   user: string;
   group: string;
   projectDir: string;
+  dataDirectory?: string;
   envFile: string;
   nodeBinary: string;
   helperBinary: string;
@@ -21,6 +22,7 @@ export function renderUnit(template: string, values: ServiceUnitValues): string 
     .replaceAll('{{USER}}', values.user)
     .replaceAll('{{GROUP}}', values.group)
     .replaceAll('{{PROJECT_DIR}}', values.projectDir)
+    .replaceAll('{{DATA_DIR}}', values.dataDirectory ?? `${values.projectDir}/data`)
     .replaceAll('{{ENV_FILE}}', values.envFile)
     .replaceAll('{{NODE_BINARY}}', values.nodeBinary)
     .replaceAll('{{HELPER_BINARY}}', values.helperBinary)

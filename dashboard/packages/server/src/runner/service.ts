@@ -3316,7 +3316,7 @@ export async function createRunner(config: RunnerConfig): Promise<{
   };
   const tasks = new AgentTaskStore(config.databasePath, config.runStorageBudgetBytes);
   tasks.seedDefaultProject({
-    name: 'Local AI B70',
+    name: 'B70 Observatory',
     repositoryPath: config.repository,
     targetBranch: config.targetBranch ?? config.revision,
     workdir: 'dashboard',

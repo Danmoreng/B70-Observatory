@@ -140,7 +140,7 @@ async function main(): Promise<void> {
     gatewayToken = createOpaqueToken();
     content = renderInitialLanConfig({
       host: hostArgument ?? defaultLanHost(),
-      dbPath: resolve(projectRoot, 'data/observatory.db'),
+      dbPath: resolve(projectRoot, argument('--db-path') ?? 'data/observatory.db'),
       webRoot: resolve(projectRoot, 'packages/web/dist'),
       passwordHash,
       gatewayTokenHash: hashOpaqueToken(gatewayToken),

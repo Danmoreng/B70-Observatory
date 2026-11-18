@@ -33,6 +33,10 @@ describe('Observatory systemd unit', () => {
     expect(unit).toContain(
       'ExecStart=/usr/bin/node /var/lib/local-ai-b70-releases/current/server.cjs'
     );
+    expect(unit).toContain(`ReadWritePaths="${values.projectDir}/data"`);
+    const external = renderUnit(template, { ...values, dataDirectory: '/srv/observatory-state' });
+    expect(external).toContain('ReadWritePaths="/srv/observatory-state"');
+    expect(external).not.toContain(`ReadWritePaths="${values.projectDir}/data"`);
     expect(unit).not.toContain('{{');
   });
 

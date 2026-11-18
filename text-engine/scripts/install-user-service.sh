@@ -11,6 +11,16 @@ done
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit_file="$unit_dir/b70-qwen38-vllm.service"
 mkdir -p "$unit_dir"
+if (( $# )); then
+  if [[ $# != 2 || "$1" != --env-file || ! -f "$2" ]]; then
+    echo "Usage: $0 [--env-file /absolute/path/to/text.env]" >&2
+    exit 2
+  fi
+  config=$(realpath -- "$2")
+  [[ "$config" =~ ^/[a-zA-Z0-9._/+@-]+$ ]] || { echo "Unsupported environment-file path" >&2; exit 2; }
+  mkdir -p "$unit_file.d"
+  printf '[Service]\nEnvironment=B70_TEXT_ENV_FILE=%s\nEnvironmentFile=\nEnvironmentFile=%s\n' "$config" "$config" > "$unit_file.d/50-private-config.conf"
+fi
 sed "s|@REPO_DIR@|$repo_dir|g" \
   "$repo_dir/systemd/b70-qwen38-vllm.service.in" > "$unit_file"
 sed "s|@REPO_DIR@|$repo_dir|g" \

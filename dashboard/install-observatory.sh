@@ -3,12 +3,14 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 service_user="${SUDO_USER:-}"
+config_dir="$script_dir/data"
+data_dir="$script_dir/data"
 skip_build=false
 reuse_runner_config=false
 
 usage() {
   cat <<'EOF'
-Usage: sudo ./install-observatory.sh [--user USER] [--skip-build] [--reuse-runner-config]
+Usage: sudo ./install-observatory.sh [--user USER] [--skip-build] [--reuse-runner-config] [--config-dir DIR] [--data-dir DIR]
 
 Builds Local AI B70 Observatory, prepares the isolated coding-runner profile,
 installs/updates all hardened systemd units and starts (or restarts) them.
@@ -24,6 +26,14 @@ while (($# > 0)); do
     --user)
       shift
       service_user="${1:-}"
+      ;;
+    --config-dir)
+      config_dir="$(realpath -m -- "${2:?missing config directory}")"
+      shift
+      ;;
+    --data-dir)
+      data_dir="$(realpath -m -- "${2:?missing data directory}")"
+      shift
       ;;
     --skip-build)
       skip_build=true
@@ -59,7 +69,7 @@ if ! id "$service_user" >/dev/null 2>&1; then
   exit 1
 fi
 
-env_file="$script_dir/data/observatory.env"
+env_file="$config_dir/observatory.env"
 if [[ ! -f "$env_file" ]]; then
   printf 'Missing %s\n' "$env_file" >&2
   printf 'Run this first without sudo:\n  cd %s && npm run configure\n' "$script_dir" >&2
@@ -72,7 +82,7 @@ if [[ "$reuse_runner_config" == true ]]; then
     printf 'Dashboard source has uncommitted changes; commit them before installation.\n' >&2
     exit 1
   fi
-  if [[ ! -f "$script_dir/data/runner.env" ]]; then
+  if [[ ! -f "$config_dir/runner.env" ]]; then
     printf 'Existing runner configuration is missing: %s/data/runner.env\n' "$script_dir" >&2
     exit 1
   fi
@@ -109,13 +119,14 @@ if [[ "$reuse_runner_config" == true ]]; then
 else
   printf 'Preparing isolated runner configuration as %s...\n' "$service_user"
   runuser -u "$service_user" -- "$npm_binary" --prefix "$script_dir" run configure:runner -- \
-    --project-dir "$script_dir"
+    --project-dir "$script_dir" --env-file "$env_file" --runner-env-file "$config_dir/runner.env" --profile-root "$config_dir/runner-profile"
 fi
-runner_env_file="$script_dir/data/runner.env"
+runner_env_file="$config_dir/runner.env"
 
 printf 'Installing systemd service...\n'
 "$script_dir/node_modules/.bin/tsx" "$script_dir/ops/install-service.ts" \
   --project-dir "$script_dir" \
+  --data-dir "$data_dir" \
   --env-file "$env_file" \
   --runner-env-file "$runner_env_file" \
   --user "$service_user"

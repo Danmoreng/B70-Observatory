@@ -64,6 +64,7 @@ function main(): void {
   const dryRun = process.argv.includes('--dry-run');
   if (!dryRun && process.getuid?.() !== 0) throw new Error('run this installer with sudo');
   const projectDir = safePath(argument('--project-dir') ?? '.', 'project directory');
+  const dataDirectory = safePath(argument('--data-dir') ?? `${projectDir}/data`, 'dashboard data directory');
   const envFile = safePath(
     argument('--env-file') ?? `${projectDir}/data/observatory.env`,
     'env file'
@@ -136,6 +137,7 @@ function main(): void {
     user,
     group,
     projectDir,
+    dataDirectory,
     envFile,
     runnerEnvFile,
     runnerProjectRoots: readRunnerProjectRoots(readFileSync(runnerEnvFile, 'utf8')),
@@ -219,7 +221,6 @@ function main(): void {
   );
   chmodSync(releaseEnvFile, 0o600);
   chownSync(releaseEnvFile, 0, 0);
-  const dataDirectory = `${projectDir}/data`;
   mkdirSync(dataDirectory, { recursive: true, mode: 0o700 });
   execFileSync('chown', [`${user}:${group}`, dataDirectory]);
   mkdirSync(dirname(helperBinary), { recursive: true, mode: 0o755 });

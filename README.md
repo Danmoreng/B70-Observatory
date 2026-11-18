@@ -6,6 +6,7 @@ A local coding-agent workstation for the Intel Arc Pro B70. One GPU serves Qwen3
 | --- | --- |
 | `dashboard/` | Observatory web UI, authenticated gateway, GPU scheduler, image Studio, coding runner and service installers |
 | `diffusion-desk/` | [Standalone ComfyUI web workspace](diffusion-desk/docs/COMFYUI_WEB.md), Vue frontend and Node adapter |
+| `chat-ui/` | Optional separate Hugging Face Chat UI launcher with a persistent MongoDB volume |
 | `pi/` | Pinned Pi coding-agent package and lockfile |
 | `third_party/agent-workspace-linux/` | Headless desktop implementation used inside the agent sandbox |
 | `text-engine/` | Direct XPU source build, EXL3 profile, bounded transfers, 180 W power control and RAM prefix cache |
@@ -27,15 +28,23 @@ In a 4000 × 3000 ComfyUI switch test, the secondary cache started at 7.93 GiB. 
 
 The reference stack targets x86-64 Arch Linux, systemd, the Intel xe driver and a 32 GB B70. Use a regular account with Docker and render-device access. Install Git, Python 3.12, Node.js 24 and npm, Bubblewrap, Bash, curl, jq, GNU core utilities, GCC/G++, GnuPG, CMake, Ninja, libarchive, and the Rust toolchain pinned in `dashboard/ops/desktop/build.sh`. Provide Chrome under `/opt/google/chrome` or use `--browser-root` with a separate Chrome installation. The packaged Chromium runtime is used for desktop browsing. Allow disk space for Docker build stages and model downloads. The three image weights alone use about 38 GB.
 
+Use this checkout as the source for the services and release builds. Keep credentials, host settings and writable application state in private directories outside Git. The following commands use the same shell variables throughout the installation.
+
+```bash
+b70_config="${XDG_CONFIG_HOME:-$HOME/.config}/b70-observatory"
+b70_state="${XDG_STATE_HOME:-$HOME/.local/state}/b70-observatory/dashboard"
+install -d -m 700 "$b70_config" "$b70_state"
+```
+
 ### 1. Build the text engine
 
 From `text-engine/`, build the direct XPU image. The build verifies the locked sources and native libraries and writes a receipt with the resulting image ID. The reference system's qualified Docker image is identified in the repository by digest. A fresh source build has its own ID and runtime status.
 
 ```bash
 python3 scripts/build-engine.py --tag local/b70-observatory:direct-xpu --output .work/direct-xpu
-cp .env.example .env
-sed -i 's|^VLLM_IMAGE=.*|VLLM_IMAGE=local/b70-observatory:direct-xpu|' .env
-printf 'B70_BUILD_RECEIPT=%s\n' "$PWD/.work/direct-xpu/build.json" >> .env
+install -m 600 .env.example "$b70_config/text.env"
+sed -i 's|^VLLM_IMAGE=.*|VLLM_IMAGE=local/b70-observatory:direct-xpu|' "$b70_config/text.env"
+printf 'B70_BUILD_RECEIPT=%s\n' "$PWD/.work/direct-xpu/build.json" >> "$b70_config/text.env"
 export B70_BUILD_RECEIPT="$PWD/.work/direct-xpu/build.json"
 ./scripts/download-model.sh
 ```
@@ -47,14 +56,14 @@ The power helper discovers the B70 through sysfs. If multiple cards match, set `
 ```bash
 ./scripts/set-power-limit.py
 set -a
-source .env
+source "$b70_config/text.env"
 set +a
 python3 scripts/run-server-exl3.py --check-only
-./scripts/install-user-service.sh
+./scripts/install-user-service.sh --env-file "$b70_config/text.env"
 curl -fsS http://127.0.0.1:8081/health
 ```
 
-Wait for model loading before checking health. On a machine that already has the exact qualified image, keep its matching tag in `.env` and omit the build receipt. Both paths check the checkpoint files and serving configuration.
+Wait for model loading before checking health. On a machine that already has the exact qualified image, keep its matching tag in `text.env` and omit the build receipt. Both paths check the checkpoint files and serving configuration.
 
 ### 2. Prepare the image engine and sandbox runtimes
 
@@ -63,7 +72,8 @@ Before building the sandbox desktop, install the [signing keyrings for its pinne
 From the **repository root**, prepare the pinned ComfyUI checkout. The installer verifies model and Intel package checksums and creates an isolated Python environment. Downloads are stored under `.work/ComfyUI` by default.
 
 ```bash
-python3 image-engine/prepare.py
+comfy_root="${XDG_DATA_HOME:-$HOME/.local/share}/b70-observatory/ComfyUI"
+python3 image-engine/prepare.py --root "$comfy_root"
 npm ci --prefix pi
 cd dashboard
 npm ci
@@ -80,22 +90,38 @@ The release build verifies and packages the prepared browser, desktop and memory
 From `dashboard/`, generate credentials on the target machine. For local access use loopback. For LAN access substitute the specific interface address and configure trusted HTTPS before transmitting credentials over the network.
 
 ```bash
-node packages/server/dist/cli/configure-auth.js --host 127.0.0.1
+node packages/server/dist/cli/configure-auth.js --host 127.0.0.1 \
+  --output "$b70_config/observatory.env" --db-path "$b70_state/observatory.db"
 read -rs -p 'Gateway token printed by configure-auth: ' B70_RUNNER_GATEWAY_TOKEN
 echo
 export B70_RUNNER_GATEWAY_TOKEN
-npm run configure:runner -- --project-dir "$PWD"
+npm run configure:runner -- --project-dir "$PWD" --env-file "$b70_config/observatory.env" \
+  --runner-env-file "$b70_config/runner.env" --profile-root "$b70_config/runner-profile"
 unset B70_RUNNER_GATEWAY_TOKEN
 cd ..
-python3 scripts/configure-stack.py
-sudo install -Dm644 .work/studio-paths.conf /etc/systemd/system/local-ai-b70-observatory.service.d/studio-paths.conf
+python3 scripts/configure-stack.py --config-dir "$b70_config" --state-dir "$b70_state" \
+  --comfy-root "$comfy_root" --studio-dropin "$b70_config/studio-paths.conf"
+sudo install -Dm644 "$b70_config/studio-paths.conf" /etc/systemd/system/local-ai-b70-observatory.service.d/studio-paths.conf
 cd dashboard
-sudo ./install-observatory.sh --user "$(id -un)" --reuse-runner-config
+sudo ./install-observatory.sh --user "$(id -un)" --reuse-runner-config --config-dir "$b70_config" --data-dir "$b70_state"
 ```
 
 The generated drop-in grants Studio write access to the image output and reference-input directories under the selected ComfyUI root. The runner keeps its existing sandbox boundaries. User systemd manages the two GPU engines and the RAM cache. System services manage the Observatory, runner and privileged helpers.
 
 Open `http://127.0.0.1:8090/`, sign in and select **Hybrid** for agent image requests. Create a project under the configured projects directory. Test a coding task with a desktop preview, then ask the same agent to generate an image and continue the conversation. Studio and the agent share the GPU scheduler. Use one scheduler at a time.
+
+## Updating a running workstation
+
+Commit code in this repository. For a dashboard, Studio or runner change, build the release from that commit and activate it when the workstation is idle. The existing release helper verifies the packaged files, restarts both services and health-checks the result. The previous release remains available for rollback.
+
+```bash
+(cd dashboard && npm run typecheck && npm test && npm run build)
+python3 scripts/activate-dashboard.py --observatory-db "$b70_state/observatory.db"
+```
+
+The text service reads `text.env` from its installed systemd configuration and loads the qualified runtime from `text-engine/` on startup. Run the documented preflight with that environment before restarting an idle text service. Changes to the RAM broker require a separate broker restart, which clears its disposable cache. A changed model image or dependency lock also requires its corresponding build or preparation step.
+
+The image launcher reads optional host settings from `image.env` in the configured directory. For an existing prepared installation, set `B70_COMFY_NATIVE_ROOT` to the directory containing `root/usr/lib` and `icd`. The host can set `TZ`, `B70_COMFY_LATEST_START` and `B70_COMFY_STOP_AT` to apply a daily work window. The optional separate Chat UI uses `chat-ui/run-chatui.sh` with `B70_CHATUI_ENV_FILE` pointing at its private Docker environment file.
 
 ## Verification and provenance
 

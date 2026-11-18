@@ -32,13 +32,20 @@ def main():
     parser.add_argument('--comfy-root', type=Path, default=ROOT/'.work/ComfyUI')
     parser.add_argument('--browser-root', type=Path, default=Path('/opt/google/chrome'),
                         help='Standalone Chrome directory mounted read-only in browser jobs')
+    parser.add_argument('--config-dir', type=Path, default=ROOT/'dashboard/data',
+                        help='Directory containing observatory.env and runner.env')
+    parser.add_argument('--state-dir', type=Path, default=ROOT/'dashboard/data',
+                        help='Writable image job state directory')
+    parser.add_argument('--studio-dropin', type=Path, default=ROOT/'.work/studio-paths.conf',
+                        help='Destination for the generated systemd write-path drop-in')
     args = parser.parse_args()
     if os.getuid() == 0:
         raise SystemExit('Run as the user who will own the GPU engines')
     base = path_value(ROOT)
     comfy = path_value(args.comfy_root)
-    data = ROOT/'dashboard/data'
-    for path in [data/'observatory.env', data/'runner.env', Path(comfy)/'.venv/bin/python', args.browser_root/'chrome']:
+    config = Path(path_value(args.config_dir))
+    data = Path(path_value(args.state_dir))
+    for path in [config/'observatory.env', config/'runner.env', Path(comfy)/'.venv/bin/python', args.browser_root/'chrome']:
         if not path.is_file():
             raise SystemExit(f'Missing prerequisite: {path}')
     for name in ('desktop-runtime', 'browser-runtime','memory-runtime'):
@@ -46,12 +53,12 @@ def main():
             raise SystemExit(f'Prepare dashboard/build/{name} first')
     for sub in ['output', 'input/DiffusionDesk']:
         (Path(comfy)/sub).mkdir(parents=True, exist_ok=True)
-    (data/'image-jobs').mkdir(mode=0o700, exist_ok=True)
-    update_env(data/'observatory.env', {
+    (data/'image-jobs').mkdir(mode=0o700, parents=True, exist_ok=True)
+    update_env(config/'observatory.env', {
         'OBSERVATORY_STUDIO_COMFY_ROOT':comfy, 'OBSERVATORY_IMAGE_JOBS_ROOT':str(data/'image-jobs'),
         'OBSERVATORY_COMFY_URL':'http://127.0.0.1:8188',
     })
-    update_env(data/'runner.env', {
+    update_env(config/'runner.env', {
         'B70_RUNNER_ENGINE':'pi-durable', 'B70_RUNNER_DESKTOP_ENABLED':'1',
         'B70_RUNNER_MEMORY_ENABLED':'1', 'B70_RUNNER_IMAGE_GENERATION_ENABLED':'1',
         'B70_RUNNER_BROWSER_RUNTIME_ROOT':path_value(args.browser_root),
@@ -60,12 +67,13 @@ def main():
     units.mkdir(parents=True,exist_ok=True)
     (units/'diffusion-desk-comfyui.service').write_text(f'''[Unit]
 Description=ComfyUI H3 image generation on Intel XPU
-After=b70-qwen38-vllm.service
+After=network-online.target b70-qwen38-vllm.service
 Conflicts=b70-qwen38-vllm.service
 
 [Service]
 Type=simple
 Environment=B70_COMFY_ROOT={comfy}
+EnvironmentFile=-{config}/image.env
 WorkingDirectory={comfy}
 ExecStart={base}/image-engine/start.sh
 MemoryHigh=22G
@@ -76,7 +84,7 @@ KillMode=control-group
 TimeoutStopSec=30
 ''')
     # The privileged installer reads this template on the target machine.
-    dropin = ROOT/'.work/studio-paths.conf'
+    dropin = args.studio_dropin
     dropin.parent.mkdir(exist_ok=True)
     dropin.write_text(f'[Service]\nReadWritePaths={comfy}/output {comfy}/input/DiffusionDesk\n')
     subprocess.run(['systemctl','--user','daemon-reload'],check=True)
