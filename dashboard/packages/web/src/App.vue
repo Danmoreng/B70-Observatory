@@ -60,8 +60,9 @@ const {
 useNotification(authError, 'auth');
 const enabled = computed(() => auth.value === 'signed-in');
 useEngineModePolling(enabled);
+const { appRoute } = useAppRoute();
 const metrics = useMetricHistory({
-  enabled,
+  enabled: computed(() => enabled.value && appRoute.page === 'hardware'),
   revision: metricRevision,
   telemetry,
   system,
@@ -73,7 +74,6 @@ const minutes = computed(() => range.value.minutes);
 const engineOpen = ref(false);
 const cacheOpen = ref(false);
 const systemOpen = ref(false);
-const { appRoute } = useAppRoute();
 const taskFocused = computed(() => appRoute.page === 'agent' && appRoute.taskId !== undefined);
 const visibleHeight = ref<number>();
 function updateVisibleHeight(): void {
@@ -197,7 +197,12 @@ const mtpHint = computed(() => {
       <template v-else>
         <WorkbenchBreadcrumb v-if="appRoute.page !== 'gallery'" />
         <ComfyDesk v-if="appRoute.page === 'studio' || appRoute.page === 'gallery'" />
-        <WorkspaceHome v-else-if="appRoute.page === 'overview'" />
+        <WorkspaceHome
+          v-else-if="appRoute.page === 'overview'"
+          :system="system"
+          :current="systemCurrent"
+          :model="telemetryCurrent ? telemetry?.model : undefined"
+        />
         <MemoryPanel v-else-if="appRoute.page === 'memory'" />
         <SettingsPage v-else-if="appRoute.page === 'settings'" />
         <template v-else-if="appRoute.page === 'hardware'">

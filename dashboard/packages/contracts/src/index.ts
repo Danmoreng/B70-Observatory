@@ -1682,10 +1682,33 @@ export function parseStreamNotice(value: unknown): StreamNotice {
   return StreamNoticeSchema.parse(value);
 }
 
+export const EngineUnitStateSchema = z.enum([
+  'active',
+  'activating',
+  'deactivating',
+  'inactive',
+  'failed',
+  'unknown',
+]);
+const EngineUnitRuntimeSchema = z
+  .object({
+    state: EngineUnitStateSchema,
+    uptimeSeconds: nonNegativeInt.optional(),
+  })
+  .strict();
+export const EngineRuntimesSchema = z
+  .object({
+    hostUptimeSeconds: nonNegativeInt,
+    text: EngineUnitRuntimeSchema,
+    image: EngineUnitRuntimeSchema,
+  })
+  .strict();
+export type EngineRuntimes = z.infer<typeof EngineRuntimesSchema>;
+
 /** State of the single locally managed vLLM user service. */
 export const EngineServiceStatusSchema = z
   .object({
-    activeState: z.enum(['active', 'activating', 'deactivating', 'inactive', 'failed', 'unknown']),
+    activeState: EngineUnitStateSchema,
     autostart: z.boolean(),
     gpu: z
       .object({

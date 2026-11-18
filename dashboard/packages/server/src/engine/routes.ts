@@ -1,3 +1,4 @@
+import { uptime } from 'node:os';
 import type { FastifyInstance } from 'fastify';
 import { EngineServiceActionSchema } from '@observatory/contracts';
 import { EngineServiceBusyError, type EngineServiceController } from './service.js';
@@ -6,6 +7,16 @@ export function registerEngineRoutes(
   app: FastifyInstance,
   controller?: EngineServiceController
 ): void {
+  app.get('/api/engine/runtimes', async (_request, reply) => {
+    reply.header('cache-control', 'no-store');
+    const hostUptimeSeconds = Math.floor(uptime());
+    try {
+      if (controller) return { hostUptimeSeconds, ...(await controller.runtimes()) };
+    } catch (error) {
+      app.log.debug({ err: error }, 'engine runtimes unavailable');
+    }
+    return { hostUptimeSeconds, text: { state: 'unknown' }, image: { state: 'unknown' } };
+  });
   app.get('/api/engine/service', async (_request, reply) => {
     reply.header('cache-control', 'no-store');
     if (!controller)

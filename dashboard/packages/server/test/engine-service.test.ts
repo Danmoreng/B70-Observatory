@@ -4,6 +4,28 @@ import { createEngineServiceController, EngineServiceBusyError } from '../src/en
 const active = 'LoadState=loaded\nActiveState=active\nUnitFileState=enabled\n';
 
 describe('vLLM user service controller', () => {
+  it('times each running unit independently of scheduler mode and ignores old or missing starts', async () => {
+    const nowMicros = () => process.hrtime.bigint() / 1000n;
+    const before = nowMicros();
+    const startMicros = before / 2n;
+    const text =
+      'Id=b70-qwen38-vllm.service\nLoadState=loaded\nActiveState=inactive\nActiveEnterTimestampMonotonic=12345';
+    const image = `Id=diffusion-desk-comfyui.service\nLoadState=loaded\nActiveState=active\nActiveEnterTimestampMonotonic=${startMicros}`;
+    const controller = createEngineServiceController(async () => `${image}\n\n${text}\n`);
+    const result = await controller.runtimes();
+    expect(result.text).toEqual({ state: 'inactive' });
+    expect(result.image.state).toBe('active');
+    expect(result.image.uptimeSeconds).toBeGreaterThanOrEqual(Number((before - startMicros) / 1_000_000n));
+    expect(result.image.uptimeSeconds).toBeLessThanOrEqual(Number((nowMicros() - startMicros) / 1_000_000n));
+    const partial = createEngineServiceController(async () =>
+      image.replace(String(startMicros), '0')
+    );
+    expect(await partial.runtimes()).toEqual({
+      text: { state: 'unknown' },
+      image: { state: 'active' },
+    });
+  });
+
   it('reads the fixed unit and uses only fixed systemctl arguments', async () => {
     const calls: string[][] = [];
     const controller = createEngineServiceController(async (args) => {

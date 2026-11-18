@@ -3108,19 +3108,6 @@ dd {
   margin: 0;
   color: var(--text);
 }
-.workspace-task-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 8px;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  color: var(--text);
-  border: 0;
-  border-bottom: 1px solid var(--border);
-}
-.workspace-task-row:hover,
 .workbench-project-list > li:hover {
   background: #232e38;
 }
@@ -3177,9 +3164,6 @@ dd {
 }
 .workbench-recent-projects small {
   color: var(--dim);
-}
-.workspace-home-links {
-  margin: 12px 0 0;
 }
 .project-list-controls {
   margin-bottom: 8px;
@@ -3329,13 +3313,6 @@ dd {
   }
   .computer-charts {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .workspace-task-row {
-    gap: 8px;
-    padding: 14px 6px;
-  }
-  .workspace-task-row > .workbench-monogram {
-    display: none;
   }
   .project-list-controls > label {
     min-width: 0;
@@ -3519,9 +3496,6 @@ textarea {
 }
 .project-detail-heading {
   flex-wrap: wrap;
-}
-.workspace-inbox:empty {
-  display: none;
 }
 
 .task-live-workspace.split-workspace {

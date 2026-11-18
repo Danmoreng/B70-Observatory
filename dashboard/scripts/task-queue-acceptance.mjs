@@ -151,54 +151,59 @@ try {
         await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'),
         true
       );
-      assert.equal(
-        await browser.evaluate(
-          `document.querySelector('.workbench-breadcrumb').textContent.includes(${JSON.stringify('Waiting browser task ')} + ${JSON.stringify(locale)})`
-        ),
-        false
+      await until(
+        () => browser.evaluate(`document.querySelector('.workbench-task-title')?.textContent.trim() === ${JSON.stringify('Waiting browser task ' + locale)}`),
+        'Current queued task missing from the breadcrumb'
       );
       await browser.capture(join(output, `queue-${locale}-${width}.png`));
       await browser.send('Page.navigate', { url: url + '/#/overview' });
       await until(
-        () => browser.evaluate("document.querySelectorAll('.workspace-task-row').length >= 3"),
-        'Home task list missing'
+        () => browser.evaluate("document.querySelectorAll('.system-home .resource').length === 4"),
+        'System overview missing'
       );
       assert.equal(
-        await browser.evaluate("document.querySelector('.workbench-preview') !== null"),
+        await browser.evaluate(
+          "document.querySelector('.system-home .task-table-row, .system-home .shared-project-card') !== null"
+        ),
         false
       );
       await browser.capture(join(output, `home-${locale}-${width}.png`));
+      await browser.evaluate(`document.querySelector('.app-sidebar a[href="#/agent"]').click()`);
+      await until(
+        () => browser.evaluate("document.querySelectorAll('.task-table-row').length >= 3"),
+        'Task list missing'
+      );
       await browser.evaluate(
-        `Array.from(document.querySelectorAll('.workspace-task-row')).find(row => row.textContent.includes(${JSON.stringify('Waiting browser task ')} + ${JSON.stringify(locale)})).click()`
+        `Array.from(document.querySelectorAll('.task-table-row')).find(row => row.textContent.includes(${JSON.stringify('Waiting browser task ' + locale)})).click()`
       );
       await until(
         () =>
           browser.evaluate(
-            `location.hash === ${JSON.stringify('#/agent/')} + ${JSON.stringify(queued.accepted.taskId)}`
+            `location.hash === ${JSON.stringify('#/agent/' + queued.accepted.taskId)}`
           ),
-        'Home row did not navigate directly'
+        'Task row did not navigate to the queued task'
       );
       await browser.send('Page.navigate', { url: url + '/#/projects' });
       await until(
-        () => browser.evaluate("document.querySelector('.project-tile') !== null"),
+        () => browser.evaluate("document.querySelector('.project-card-link') !== null"),
         'Project list missing'
       );
       assert.equal(
         await browser.evaluate("document.querySelector('.workbench-preview') !== null"),
         false
       );
-      await browser.evaluate("document.querySelector('.project-pin-button').click()");
+      await browser.evaluate("document.querySelector('.project-card-pin').click()");
       await until(
         () =>
           browser.evaluate(
-            "document.querySelector('.project-pin-button').getAttribute('aria-pressed') === 'true'"
+            "document.querySelector('.project-card-pin').getAttribute('aria-pressed') === 'true'"
           ),
         'Pin did not toggle independently'
       );
       assert.equal(await browser.evaluate('location.hash'), '#/projects');
-      await browser.evaluate("document.querySelector('.project-pin-button').click()");
+      await browser.evaluate("document.querySelector('.project-card-pin').click()");
       await browser.capture(join(output, `projects-${locale}-${width}.png`));
-      await browser.evaluate("document.querySelector('.project-tile').click()");
+      await browser.evaluate("document.querySelector('.project-card-link').click()");
       await until(
         () =>
           browser.evaluate(

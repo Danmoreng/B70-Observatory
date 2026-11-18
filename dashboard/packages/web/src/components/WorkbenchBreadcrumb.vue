@@ -13,7 +13,7 @@ const label = computed(() =>
         : appRoute.page === 'gallery'
           ? 'studio.gallery'
           : appRoute.page === 'overview'
-            ? 'workbench.inbox'
+            ? 'sidebar.overview'
             : appRoute.page === 'memory'
               ? 'memory.title'
               : appRoute.page === 'hardware'

@@ -7,7 +7,6 @@ import {
   type DurableTaskList,
 } from '@observatory/contracts';
 import AgentProjectBrowser from '../src/components/agent/AgentProjectBrowser.vue';
-import WorkspaceHome from '../src/components/WorkspaceHome.vue';
 import { appRoute, navigateTo } from '../src/composables/useAppRoute.js';
 
 enableAutoUnmount(afterEach);
@@ -157,16 +156,6 @@ describe('project browser', () => {
     expect(wrapper.text()).toContain('Beta task');
   });
 
-  it('omits archived registrations from workspace recent projects', async () => {
-    seedProjectsAndTasks();
-    mockState.projects[1]!.archived = true;
-    const wrapper = mount(WorkspaceHome);
-    await flushPromises();
-    const recent = wrapper.get('.shared-project-grid');
-    expect(recent.text()).toContain('Alpha');
-    expect(recent.text()).not.toContain('Beta');
-  });
-
   it('lists registered projects grouped with their task counts', async () => {
     seedProjectsAndTasks();
     appRoute.page = 'projects';
@@ -293,29 +282,5 @@ describe('project browser', () => {
     await wrapper.get('.task-back-button').trigger('click');
     expect(appRoute.projectId).toBeUndefined();
     expect(wrapper.findAll('.shared-project-card')).toHaveLength(2);
-  });
-
-  it('keeps the start page focused on active work and links to dedicated hardware', async () => {
-    seedProjectsAndTasks();
-    appRoute.page = 'overview';
-    const wrapper = mount(WorkspaceHome);
-    await flushPromises();
-    expect(wrapper.findAll('.workspace-inbox')[0]!.findAll('.workspace-task-row')).toHaveLength(1);
-    expect(wrapper.findAll('.workspace-inbox')[0]!.text()).toContain('Alpha live task');
-    expect(wrapper.findAll('.workspace-inbox')[1]!.findAll('.workspace-task-row')).toHaveLength(2);
-    expect(wrapper.find('.kpi-grid').exists()).toBe(false);
-    expect(wrapper.find('.workbench-preview').exists()).toBe(false);
-    await wrapper.get('.workspace-home-links .text-button').trigger('click');
-    expect(appRoute.page).toBe('hardware');
-  });
-
-  it('opens a task directly from a start-page inbox row', async () => {
-    seedProjectsAndTasks();
-    appRoute.page = 'overview';
-    const wrapper = mount(WorkspaceHome);
-    await flushPromises();
-    await wrapper.find('.workspace-inbox .workspace-task-row').trigger('click');
-    expect(appRoute.page).toBe('agent');
-    expect(appRoute.taskId).toBe('30000000-0000-4000-8000-000000000003');
   });
 });

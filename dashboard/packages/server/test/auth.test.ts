@@ -64,6 +64,10 @@ function sessionCookie(response: {
 describe('LAN browser authentication', () => {
   it('guards engine status and actions with the browser session and same-origin rule', async () => {
     const engineService: EngineServiceController = {
+      runtimes: async () => ({
+        text: { state: 'active', uptimeSeconds: 42 },
+        image: { state: 'inactive' },
+      }),
       status: async () => ({ activeState: 'active', autostart: true }),
       action: async () => ({ activeState: 'inactive', autostart: true }),
     };
@@ -76,6 +80,13 @@ describe('LAN browser authentication', () => {
       payload: { password: PASSWORD },
     });
     const cookie = sessionCookie(login);
+    const runtimeUrl = '/api/engine/runtimes';
+    expect((await app.inject({ url: runtimeUrl })).statusCode).toBe(401);
+    const timings = await app.inject({ url: runtimeUrl, headers: { cookie } });
+    expect(timings.json()).toMatchObject({
+      hostUptimeSeconds: expect.any(Number),
+      ...(await engineService.runtimes()),
+    });
     const read = await app.inject({
       method: 'GET',
       url: '/api/engine/service',
