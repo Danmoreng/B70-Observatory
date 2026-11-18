@@ -18,6 +18,7 @@ import {
   type AgentTimelineImage,
   type AgentTimelineItem,
   type DurableTaskDetail,
+  type RecentWork,
   type DurableTaskList,
   type RegenerateTaskTitleResult,
   type DurableTracePage,
@@ -151,6 +152,7 @@ export interface AgentController {
   steer(input: SteerAgentRunRequest): Promise<AgentRunSnapshot>;
   pause?(input: CancelAgentRunRequest): Promise<AgentRunSnapshot>;
   cancel?(input: CancelAgentRunRequest): Promise<AgentRunSnapshot>;
+  recentWork?(): Promise<RecentWork>;
   listTasks?(): Promise<DurableTaskList>;
   getTask?(taskId: string): Promise<DurableTaskDetail>;
   getTaskChangeImage?(taskId: string, runId: string, path: string): Promise<AgentRunImagePayload>;

@@ -776,6 +776,36 @@ export const DurableTaskSummarySchema = z
     attention: z.enum(['question', 'error', 'review', 'waiting', 'none']).optional(),
   })
   .strict();
+export const RecentWorkSchema = z
+  .object({
+    tasks: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            title: z.string(),
+            projectName: z.string(),
+            updatedAt: UtcTimestampSchema,
+            runStatus: DurableRunStatusSchema,
+          })
+          .strict()
+      )
+      .max(3),
+    projects: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            name: z.string(),
+            updatedAt: UtcTimestampSchema,
+          })
+          .strict()
+      )
+      .max(3),
+  })
+  .strict();
+export type RecentWork = z.infer<typeof RecentWorkSchema>;
+
 export type DurableTaskSummary = z.infer<typeof DurableTaskSummarySchema>;
 
 export const DurableTaskMessageSchema = z

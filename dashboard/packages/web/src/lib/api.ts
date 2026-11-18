@@ -6,6 +6,7 @@ import {
 } from '@observatory/contracts';
 import { SpeechStatusSchema, SpeechResultSchema } from '@observatory/contracts';
 import {
+  RecentWorkSchema,
   HistoryChangeSchema,
   MetricsHistoryQuerySchema,
   RequestListQuerySchema,
@@ -548,6 +549,12 @@ async function agentDataRequest<T>(
     if (error instanceof HealthFetchError) throw error;
     throw new HealthFetchError('Task history is not reachable.', 'network', undefined, 'agent');
   }
+}
+
+export function fetchRecentWork(signal: AbortSignal) {
+  return agentDataRequest('/api/agent/recent-work', (value) => RecentWorkSchema.parse(value), {
+    signal,
+  });
 }
 
 export function fetchAgentTasks(fetchImpl?: typeof fetch): Promise<DurableTaskList> {

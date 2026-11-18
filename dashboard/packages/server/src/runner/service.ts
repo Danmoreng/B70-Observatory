@@ -1786,6 +1786,10 @@ export class IsolatedAgentService implements AgentController {
     }
   }
 
+  async recentWork() {
+    return this.tasks.recentWork();
+  }
+
   async listTasks() {
     try {
       return this.tasks.listTasks();
@@ -2890,6 +2894,12 @@ export function createRunnerControlServer(
           await readJson(request, MAX_AGENT_INPUT_BODY_BYTES)
         );
         json(response, 200, await service.start(input));
+        return;
+      }
+      if (request.method === 'GET' && request.url === '/v1/recent-work') {
+        if (!service.recentWork)
+          throw new AgentControlError('unavailable', 'Recent work unavailable.');
+        json(response, 200, await service.recentWork());
         return;
       }
       if (request.method === 'GET' && request.url === '/v1/projects') {

@@ -158,7 +158,7 @@ try {
       await browser.capture(join(output, `queue-${locale}-${width}.png`));
       await browser.send('Page.navigate', { url: url + '/#/overview' });
       await until(
-        () => browser.evaluate("document.querySelectorAll('.system-home .resource').length === 4"),
+        () => browser.evaluate("document.querySelectorAll('.system-home .kpi').length === 4"),
         'System overview missing'
       );
       assert.equal(
@@ -167,15 +167,17 @@ try {
         ),
         false
       );
-      await browser.capture(join(output, `home-${locale}-${width}.png`));
-      await browser.evaluate(`document.querySelector('.app-sidebar a[href="#/agent"]').click()`);
+      const taskShortcut = '.recent-work a[href="#/agent/' + queued.accepted.taskId + '"]';
+      const projectShortcut = '.recent-work a[href="#/projects/' + project.id + '"]';
       await until(
-        () => browser.evaluate("document.querySelectorAll('.task-table-row').length >= 3"),
-        'Task list missing'
+        () =>
+          browser.evaluate(
+            `Boolean(document.querySelector(${JSON.stringify(taskShortcut)}) && document.querySelector(${JSON.stringify(projectShortcut)}))`
+          ),
+        'Recent task and project shortcuts missing'
       );
-      await browser.evaluate(
-        `Array.from(document.querySelectorAll('.task-table-row')).find(row => row.textContent.includes(${JSON.stringify('Waiting browser task ' + locale)})).click()`
-      );
+      await browser.capture(join(output, `home-${locale}-${width}.png`));
+      await browser.evaluate(`document.querySelector(${JSON.stringify(taskShortcut)}).click()`);
       await until(
         () =>
           browser.evaluate(

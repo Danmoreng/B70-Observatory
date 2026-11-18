@@ -146,6 +146,19 @@ export function registerAgentRoutes(app: FastifyInstance, agent?: AgentControlle
     return snapshot();
   });
 
+  app.get('/api/agent/recent-work', async (_request, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!agent?.recentWork)
+      return reply.code(503).send({
+        error: { code: 'service_unavailable', message: 'Recent work is unavailable.' },
+      });
+    try {
+      return await agent.recentWork();
+    } catch (error) {
+      sendControlError(reply, error);
+    }
+  });
+
   app.get('/api/agent/tasks', async (_request, reply) => {
     reply.header('cache-control', 'no-store');
     if (agent?.listTasks === undefined) {

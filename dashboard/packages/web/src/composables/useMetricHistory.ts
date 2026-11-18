@@ -19,6 +19,7 @@ import {
 
 export function useMetricHistory(options: {
   enabled: Ref<boolean>;
+  historyGroup?: Ref<(typeof SERIES)[number]['group'] | undefined>;
   revision: Ref<number>;
   telemetry: Ref<VllmTelemetryPayload | null>;
   system: Ref<SystemSnapshot | null>;
@@ -55,7 +56,9 @@ export function useMetricHistory(options: {
     };
     loading.value = true;
     await Promise.all(
-      SERIES.map(async (series) => {
+      SERIES.filter(
+        (s) => !options.historyGroup?.value || s.group === options.historyGroup.value
+      ).map(async (series) => {
         try {
           const payload = await fetchMetricHistory({ ...query, series: series.key }, signal);
           if (token !== epoch || disposed) return;
@@ -121,8 +124,8 @@ export function useMetricHistory(options: {
     void refresh();
   });
   watch(
-    options.enabled,
-    (enabled) => {
+    [options.enabled, () => options.historyGroup?.value],
+    ([enabled]) => {
       cancel();
       if (enabled) void refresh();
       else {

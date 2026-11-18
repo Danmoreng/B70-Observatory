@@ -19,6 +19,7 @@ import {
   AgentRunResultSchema,
   ReleaseJobSchema,
   DurableTaskDetailSchema,
+  RecentWorkSchema,
   DurableTaskListSchema,
   DurableTracePageSchema,
   RegenerateTaskTitleResultSchema,
@@ -173,6 +174,10 @@ export class RunnerAgentClient implements AgentController {
 
   async cancel(input: CancelAgentRunRequest): Promise<AgentRunSnapshot> {
     return await this.command(`/v1/runs/${encodeURIComponent(input.runId)}/cancel`, input);
+  }
+
+  async recentWork() {
+    return RecentWorkSchema.parse(await this.jsonRequest('GET', '/v1/recent-work'));
   }
 
   async listTasks(): Promise<DurableTaskList> {

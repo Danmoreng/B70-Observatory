@@ -32,6 +32,45 @@ const options = {
 };
 
 describe('durable agent task store', () => {
+  it('returns three recent tasks and projects by real activity, including projects without tasks', () => {
+    const store = createStore();
+    const at = (day: number) => new Date(Date.UTC(2026, 8, day));
+    const register = (name: string, day: number, archived = false) =>
+      store.registerProject(
+        {
+          name,
+          repositoryPath: '/' + name,
+          targetBranch: 'main',
+          workdir: '.',
+          editPaths: ['.'],
+          checks: [],
+          archived,
+        },
+        at(day)
+      );
+    const active = register('editor', 1);
+    register('docs', 2);
+    register('tools', 3);
+    register('empty', 4);
+    const archived = register('archive', 10, true);
+    for (const day of [5, 6, 7, 8, 10]) {
+      store.acceptRun(
+        { task: 'task ' + day, name: 'task ' + day },
+        {
+          ...options,
+          now: at(day),
+          projectId: day === 10 ? archived.id : active.id,
+          maxActiveRuns: 10,
+        }
+      );
+    }
+    register('docs', 12);
+    const recent = store.recentWork();
+    expect(recent.tasks.map((t) => t.title)).toEqual(['task 8', 'task 7', 'task 6']);
+    expect(recent.projects.map((p) => p.name)).toEqual(['editor', 'empty', 'tools']);
+    expect(recent.projects[0]?.updatedAt).toBe(at(8).toISOString());
+  });
+
   it('distinguishes open questions, failures and unaccepted results for the workspace inbox', () => {
     const store = createStore();
     const owner = '25252525-2525-4525-8525-252525252525';

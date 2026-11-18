@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
 import {
   EngineRuntimesSchema,
   type EngineRuntimes,
   type SystemSnapshot,
 } from '@observatory/contracts';
-import { formatBytes, formatClock, formatFixed, formatUptime } from '../lib/format.js';
+import { formatClock, formatUptime } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
+import RecentWork from './RecentWork.vue';
 import AppIcon from './AppIcon.vue';
 
-const props = defineProps<{ system: SystemSnapshot | null; current: boolean; model?: string }>();
+defineProps<{ system: SystemSnapshot | null; current: boolean; model?: string }>();
 const runtimes = ref<EngineRuntimes>();
 const loading = ref(true);
 const session = new AbortController();
@@ -47,42 +48,6 @@ function duration(seconds: number | undefined): string {
   if (seconds === undefined) return '–';
   return formatUptime(seconds < 60 ? seconds : Math.floor(seconds / 60) * 60);
 }
-
-function capacity(used?: number, total?: number): string {
-  return used !== undefined && total ? `${formatBytes(used)} / ${formatBytes(total)}` : '';
-}
-
-const resources = computed(() => {
-  const gpu = props.system?.gpu.available ? props.system.gpu.values : undefined;
-  const cpu = props.system?.cpu;
-  const ram = props.system?.memory;
-  return [
-    {
-      label: 'GPU',
-      value: gpu?.utilizationPercent,
-      hint: [
-        gpu?.temperatureC !== undefined ? `${formatFixed(gpu.temperatureC, 0)} °C` : '',
-        gpu?.powerWatts !== undefined ? `${formatFixed(gpu.powerWatts, 0)} W` : '',
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    },
-    {
-      label: 'VRAM',
-      value:
-        gpu?.vramUsedBytes !== undefined && gpu.vramTotalBytes
-          ? (gpu.vramUsedBytes / gpu.vramTotalBytes) * 100
-          : undefined,
-      hint: capacity(gpu?.vramUsedBytes, gpu?.vramTotalBytes),
-    },
-    {
-      label: 'CPU',
-      value: cpu?.utilizationPercent,
-      hint: cpu?.coreCount ? t('home.threads', { count: cpu.coreCount }) : '',
-    },
-    { label: 'RAM', value: ram?.usagePercent, hint: capacity(ram?.usedBytes, ram?.totalBytes) },
-  ];
-});
 </script>
 
 <template>
@@ -152,25 +117,9 @@ const resources = computed(() => {
             : t('home.awaiting')
         }}
       </p>
-      <dl class="resource-grid" :class="{ stale: !current }">
-        <div v-for="item in resources" :key="item.label" class="resource">
-          <dt>{{ item.label }}</dt>
-          <dd>
-            <strong
-              >{{ formatFixed(item.value, 0)
-              }}<small v-if="item.value !== undefined"> %</small></strong
-            >
-            <div class="meter-track" aria-hidden="true">
-              <i
-                v-if="item.value !== undefined"
-                :style="{ width: Math.max(0, Math.min(100, item.value)) + '%' }"
-              ></i>
-            </div>
-            <span v-if="item.hint">{{ item.hint }}</span>
-          </dd>
-        </div>
-      </dl>
+      <div class="overview-telemetry"><slot name="kpis" /><slot name="chart" /></div>
     </section>
+    <RecentWork />
   </section>
 </template>
 
@@ -273,8 +222,7 @@ const resources = computed(() => {
   justify-items: end;
   gap: 2px;
 }
-.engine-reading small,
-.resource dd > span {
+.engine-reading small {
   color: var(--dim);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -314,54 +262,44 @@ const resources = computed(() => {
   width: 14px;
   height: 14px;
 }
-.resource-grid {
+.overview-telemetry {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  border: 1px solid var(--border);
-  background: var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  margin: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+  gap: 12px;
 }
-.resource {
-  background: var(--panel);
-  padding: 14px 16px;
+.overview-telemetry :deep(.computer-kpis) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  align-content: start;
+}
+.overview-telemetry :deep(.kpi) {
+  padding: 12px;
+}
+.overview-telemetry :deep(.kpi-secondary) {
+  margin-top: 8px;
+  padding-top: 6px;
+}
+.overview-telemetry :deep(.chart-panel) {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
-.resource dt {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--dim);
+.overview-telemetry :deep(.chart-canvas) {
+  flex: 1;
+  min-height: 160px;
 }
-.resource dd {
-  margin: 4px 0 0;
+.overview-telemetry :deep(.section-heading) {
+  flex-wrap: wrap;
+  gap: 4px;
 }
-.resource dd strong {
-  font-size: 26px;
-  line-height: 1.25;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.resource dd strong small {
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--dim);
-}
-.meter-track {
-  height: 4px;
-  margin: 8px 0;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--border);
-}
-.meter-track i {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-}
-.stale .meter-track i {
-  background: var(--dim);
+@container (max-width: 800px) {
+  .overview-telemetry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .overview-telemetry :deep(.chart-canvas) {
+    flex: none;
+    height: 170px;
+  }
 }
 .sample-status {
   color: var(--dim);
@@ -372,9 +310,6 @@ const resources = computed(() => {
   .engine-pair {
     grid-template-columns: 1fr;
   }
-  .resource-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 @media (max-width: 600px) {
   .system-home {
@@ -384,8 +319,7 @@ const resources = computed(() => {
   .host-uptime .app-icon {
     display: none;
   }
-  .home-engine,
-  .resource {
+  .home-engine {
     padding: 12px;
   }
 }

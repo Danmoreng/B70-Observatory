@@ -6,13 +6,31 @@ import WorkspaceHome from '../src/components/WorkspaceHome.vue';
 enableAutoUnmount(afterEach);
 afterEach(() => vi.unstubAllGlobals());
 
-it('shows measured host and engine uptime, real zero load, and a bounded overview without tasks or projects', async () => {
-  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
-    Response.json({
-      hostUptimeSeconds: 7260,
-      text: { state: 'inactive' },
-      image: { state: 'active', uptimeSeconds: 180 },
-    })
+it('shows measured uptime and direct recent-work links without loading the cockpit', async () => {
+  const taskId = 'd58075de-6b30-44a6-9528-55167e259af1';
+  const projectId = '38eecc0e-fbb3-4750-a32a-ebfd7e0bf301';
+  const updatedAt = '2026-11-18T20:37:00.000Z';
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async (url) =>
+    Response.json(
+      url === '/api/agent/recent-work'
+        ? {
+            tasks: [
+              {
+                id: taskId,
+                title: 'Update tests',
+                projectName: 'Engine',
+                updatedAt,
+                runStatus: 'completed',
+              },
+            ],
+            projects: [{ id: projectId, name: 'Engine', updatedAt }],
+          }
+        : {
+            hostUptimeSeconds: 7260,
+            text: { state: 'inactive' },
+            image: { state: 'active', uptimeSeconds: 180 },
+          }
+    )
   );
   vi.stubGlobal('fetch', fetch);
   const system = SystemSnapshotSchema.parse({
@@ -29,13 +47,12 @@ it('shows measured host and engine uptime, real zero load, and a bounded overvie
   expect(page.get('[data-state="active"]').text()).toContain('3 min');
   expect(page.get('[data-state="inactive"]').text()).toContain('Stopped');
   expect(page.find('a[href="#/hardware"]').exists()).toBe(true);
-  expect(page.findAll('.resource').map((item) => item.get('strong').text())).toEqual([
-    '–',
-    '–',
-    '0 %',
-    '–',
+  expect(page.get('a[href="#/agent/' + taskId + '"]').text()).toContain('Update tests');
+  expect(page.get('a[href="#/projects/' + projectId + '"]').text()).toContain('Engine');
+  expect(fetch.mock.calls.map((call) => call[0]).sort()).toEqual([
+    '/api/agent/recent-work',
+    '/api/engine/runtimes',
   ]);
-  expect(fetch.mock.calls.map((call) => call[0])).toEqual(['/api/engine/runtimes']);
   expect(page.find('.workspace-task-row, .shared-project-card').exists()).toBe(false);
 });
 

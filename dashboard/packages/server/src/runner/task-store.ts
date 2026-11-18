@@ -17,6 +17,7 @@ import {
   DurableRunSchema,
   DurableTaskDetailSchema,
   DurableTaskListSchema,
+  RecentWorkSchema,
   DurableTracePageSchema,
   ReleaseJobSchema,
   type AgentRunSnapshot,
@@ -2789,6 +2790,32 @@ export class AgentTaskStore {
     for (const row of rows) {
       this.markReleaseFailed(row.id, 'Runner restarted before the release step completed.', '', at);
     }
+  }
+
+  recentWork() {
+    const tasks = this.database
+      .prepare(
+        `
+      SELECT t.id,t.title,p.name AS projectName,t.updated_at AS updatedAt,r.status AS runStatus
+      FROM agent_tasks t JOIN agent_projects p ON p.id=t.project_id JOIN agent_runs r ON r.id=(
+        SELECT id FROM agent_runs WHERE task_id=t.id AND run_kind='implementation'
+        ORDER BY created_at DESC,rowid DESC LIMIT 1
+      )
+      WHERE t.status <> 'archived' AND p.archived=0
+      ORDER BY t.updated_at DESC,t.id LIMIT 3
+    `
+      )
+      .all();
+    const projects = this.database
+      .prepare(
+        `
+      SELECT p.id,p.name,MAX(p.created_at,COALESCE(MAX(t.updated_at),p.created_at)) AS updatedAt
+      FROM agent_projects p LEFT JOIN agent_tasks t ON t.project_id=p.id AND t.status <> 'archived'
+      WHERE p.archived=0 GROUP BY p.id ORDER BY updatedAt DESC,p.id LIMIT 3
+    `
+      )
+      .all();
+    return RecentWorkSchema.parse({ tasks, projects });
   }
 
   listTasks(includeArchived = false): DurableTaskList {

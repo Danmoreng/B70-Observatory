@@ -61,7 +61,7 @@ onUnmounted(() => {
         <h2>{{ title }}</h2>
         <p v-if="subtitle" class="section-caption">{{ subtitle }}</p>
       </div>
-      <span class="chart-unit">{{ units }}</span>
+      <slot name="controls"><span class="chart-unit">{{ units }}</span></slot>
     </div>
     <div class="chart-canvas">
       <VChart

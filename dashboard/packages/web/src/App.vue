@@ -21,6 +21,7 @@ import RequestList from './components/RequestList.vue';
 import MemoryPanel from './components/MemoryPanel.vue';
 import AgentCockpit from './components/AgentCockpit.vue';
 import WorkbenchBreadcrumb from './components/WorkbenchBreadcrumb.vue';
+import ComputerKpis from './components/ComputerKpis.vue';
 import WorkspaceHome from './components/WorkspaceHome.vue';
 import AgentProjectBrowser from './components/agent/AgentProjectBrowser.vue';
 import AppSidebar from './components/AppSidebar.vue';
@@ -62,7 +63,8 @@ const enabled = computed(() => auth.value === 'signed-in');
 useEngineModePolling(enabled);
 const { appRoute } = useAppRoute();
 const metrics = useMetricHistory({
-  enabled: computed(() => enabled.value && appRoute.page === 'hardware'),
+  enabled: computed(() => enabled.value && ['overview', 'hardware'].includes(appRoute.page)),
+  historyGroup: computed(() => (appRoute.page === 'overview' ? 'gpu' : undefined)),
   revision: metricRevision,
   telemetry,
   system,
@@ -100,24 +102,6 @@ async function submitSignOut(): Promise<void> {
   clearAgentCockpitCache();
   await signOut();
 }
-const gpu = computed(() => (system.value?.gpu.available ? system.value.gpu.values : undefined));
-const gpuHint = computed(() => {
-  const section = system.value?.gpu;
-  if (!section) return t('gpu.loading');
-  if (!section.available) return section.reason;
-  const values = section.values;
-  const parts = [];
-  if (values.temperatureC !== undefined) parts.push(`${formatFixed(values.temperatureC)} °C`);
-  if (values.powerWatts !== undefined) parts.push(`${formatFixed(values.powerWatts)} W`);
-  if (values.clockMhz !== undefined) parts.push(`${formatFixed(values.clockMhz, 0)} MHz`);
-  if (values.utilizationPercent === undefined) parts.push(t('gpu.noUtilization'));
-  return parts.join(' · ') || t('gpu.noValues');
-});
-const vramPercent = computed(() =>
-  gpu.value?.vramUsedBytes !== undefined && gpu.value.vramTotalBytes
-    ? (gpu.value.vramUsedBytes / gpu.value.vramTotalBytes) * 100
-    : undefined
-);
 const chartGroups = computed(() => {
   return [
     { key: 'tokens', title: t('chart.tokens'), percent: false },
@@ -130,6 +114,7 @@ const chartGroups = computed(() => {
     error: charts.value.find((s) => s.group === group.key && s.error)?.error,
   }));
 });
+const gpuChart = computed(() => chartGroups.value.find((chart) => chart.key === 'gpu'));
 const prefixHint = computed(() => {
   const prefix = telemetry.value?.prefixCache;
   return !prefix
@@ -202,54 +187,41 @@ const mtpHint = computed(() => {
           :system="system"
           :current="systemCurrent"
           :model="telemetryCurrent ? telemetry?.model : undefined"
-        />
+        >
+          <template #kpis>
+            <ComputerKpis
+              :system="system"
+              :telemetry="telemetry"
+              :system-current="systemCurrent"
+              :telemetry-current="telemetryCurrent"
+            />
+          </template>
+          <template #chart>
+            <TimeChart
+              v-if="gpuChart"
+              :title="gpuChart.title"
+              :series="gpuChart.series"
+              :from="from"
+              :to="end"
+              :percent="true"
+              :loading="loading"
+              :error="gpuChart.error"
+              @retry="metrics.refresh"
+            >
+              <template #controls><RangePicker v-model="rangeIndex" /></template>
+            </TimeChart>
+          </template>
+        </WorkspaceHome>
         <MemoryPanel v-else-if="appRoute.page === 'memory'" />
         <SettingsPage v-else-if="appRoute.page === 'settings'" />
         <template v-else-if="appRoute.page === 'hardware'">
           <EngineMetricsPanel>
-            <section class="kpi-grid computer-kpis" :aria-label="t('app.liveKpis')">
-              <TelemetryCard
-                :title="t('kpi.gpuUtilization')"
-                :value="formatFixed(gpu?.utilizationPercent)"
-                unit="%"
-                :hint="gpuHint"
-                :meter="gpu?.utilizationPercent"
-                secondary-label="VRAM"
-                :secondary-value="formatBytes(gpu?.vramUsedBytes)"
-                :secondary-hint="t('kpi.of', { value: formatBytes(gpu?.vramTotalBytes) })"
-                :secondary-meter="vramPercent"
-                :stale="!systemCurrent"
-              />
-              <TelemetryCard
-                title="CPU"
-                :value="formatFixed(system?.cpu?.utilizationPercent)"
-                unit="%"
-                :hint="
-                  t('kpi.cpuThreads', {
-                    threads: (system?.cpu?.coreCount ?? '–').toString(),
-                    load: formatFixed(system?.cpu?.load1, 2),
-                  })
-                "
-                :meter="system?.cpu?.utilizationPercent"
-                secondary-label="RAM"
-                :secondary-value="formatBytes(system?.memory?.usedBytes)"
-                :secondary-hint="t('kpi.of', { value: formatBytes(system?.memory?.totalBytes) })"
-                :secondary-meter="system?.memory?.usagePercent"
-                :stale="!systemCurrent"
-              />
-              <TelemetryCard
-                :title="t('workbench.prefill')"
-                :value="formatFixed(telemetry?.tokens?.promptTokensPerSecond)"
-                unit="tok/s"
-                :stale="!telemetryCurrent"
-              />
-              <TelemetryCard
-                :title="t('workbench.decode')"
-                :value="formatFixed(telemetry?.tokens?.generationTokensPerSecond)"
-                unit="tok/s"
-                :stale="!telemetryCurrent"
-              />
-            </section>
+            <ComputerKpis
+              :system="system"
+              :telemetry="telemetry"
+              :system-current="systemCurrent"
+              :telemetry-current="telemetryCurrent"
+            />
           </EngineMetricsPanel>
           <section
             v-if="status.tone !== 'ok' && engineMode.mode === 'text'"
