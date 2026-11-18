@@ -294,7 +294,27 @@ function duration(seconds: number | undefined): string {
   font-size: 12px;
   margin: 0 0 8px;
 }
-@container (max-width: 740px) {
+@container (min-width: 561px) and (max-width: 800px) {
+  .status-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(130px, 0.6fr);
+  }
+  .status-card {
+    padding: 12px;
+    gap: 8px;
+  }
+  .home-engine {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .home-engine .status-symbol {
+    display: none;
+  }
+  .host-uptime .status-symbol {
+    width: 24px;
+    height: 24px;
+    border: 0;
+  }
+}
+@container (max-width: 560px) {
   .status-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
