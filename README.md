@@ -13,7 +13,15 @@ A local coding-agent workstation for the Intel Arc Pro B70. One GPU serves Qwen3
 
 The runner creates isolated worktrees and starts Pi through the gateway. Its desktop tools launch a private graphical session, inspect screenshots and drive applications in that session. The browser and desktop runtimes are read-only mounts. Keep the project checkout in a dedicated projects directory because the installer uses its parent as the allowed projects root.
 
-The active text engine uses a 12 GiB host cache. Up to 8 GiB can survive an engine switch in a separate, swap-disabled RAM service. At image startup the service drops retained blocks if less than 25 GiB is available. During image generation it makes pages reclaimable below 10 GiB and clears the cache below 5 GiB. Returning to text verifies surviving blocks before reuse.
+The active text engine uses a 12 GiB host cache. Up to 8 GiB can survive an engine switch in a separate, swap-disabled RAM service. At image startup it drops the least recently used blocks until 25 GiB is available or the cache is empty. During image generation, a dip below 10 GiB releases older blocks toward 11 GiB of headroom in batches of about 256 MiB per pressure check. Below 7 GiB all remaining pages become kernel-reclaimable, and below 5 GiB the service clears the cache. Returning to text verifies surviving blocks before reuse.
+
+The runner keeps a stable text reference for each tool screenshot and sends the two most recent previews in one labeled message. The engine retains a recurrent-state checkpoint every 7,168 tokens so a later observation can reuse the preceding text.
+
+Observatory's Pi and web clients use an explicit output limit as a budget for the answer or tool call. For example, `max_tokens=2000` with medium reasoning reserves up to 10,192 completion tokens, including up to 8,192 for thinking. After the closing thinking marker, the scheduler allows at most 2,000 more tokens. The engine applies its 16,384-token output ceiling to the visible allowance. It shortens the thinking budget when the tokenized prompt leaves less room in the model context. Other clients can select this mode with the `x-b70-output-budget: visible` header. Use `x-b70-output-budget: total` at the gateway for the standard combined limit. A request without an explicit limit keeps the 16,384-token default.
+
+On the reference B70 at 180 W, six isolated pairs of agent requests with changing tool images reused 172,032 of 228,655 tokens in their second prompts. The summed time to first token fell from 141.4 s to 37.6 s compared with the earlier runner and engine settings. On three code-review fixtures with two seeds each, separating the visible budget produced six correct lists at a 2,048-token limit. The combined limit produced four correct lists and two empty answers. Two replies in each group matched strict JSON.
+
+In a 4000 × 3000 ComfyUI switch test, the secondary cache started at 7.93 GiB. The image completed in 143 s and 2.11 GiB remained resident. After vLLM was ready, continuing the same conversation reused 17,920 of 20,344 prompt tokens. Its first token took 1.84 s, compared with 9.84 s for the identical cold prompt. The text engine took 90 s to become ready. Filling used an 8 GiB primary cache and returning to text restored the usual 12 GiB primary cache.
 
 ## Install on a B70 workstation
 

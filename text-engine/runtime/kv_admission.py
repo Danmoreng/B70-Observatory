@@ -28,6 +28,33 @@ class CompletionReservedScheduler(AsyncScheduler):
 
         self.kv_cache_manager.allocate_slots = allocate
 
+    def add_request(self, request):
+        params = request.sampling_params
+        extra = params.extra_args if params is not None else None
+        visible = (extra or {}).get("b70_visible_tokens")
+        if type(visible) is int and visible > 0 and params.thinking_token_budget is not None:
+            # The API has applied the model's output ceiling and tokenized the
+            # actual prompt. Keep that visible allowance, then reserve thinking
+            # separately within the remaining physical context.
+            visible = min(visible, request.max_tokens)
+            room = self.max_model_len - request.num_prompt_tokens - visible
+            thinking = min(params.thinking_token_budget, 8192, max(0, room))
+            params.thinking_token_budget = thinking
+            request.max_tokens = params.max_tokens = visible + thinking
+            request.b70_visible_tokens = visible
+        return super().add_request(request)
+
+    def _update_request_with_output(self, request, new_token_ids, is_stale=False):
+        visible = getattr(request, "b70_visible_tokens", None)
+        # Single </think> token in the pinned Qwen tokenizer. Process the whole
+        # accepted MTP group before vLLM checks each token for EOS or length.
+        # Thus tokens following the delimiter in that same group count too.
+        if visible is not None and not is_stale and 248069 in new_token_ids:
+            boundary = request.num_output_tokens + new_token_ids.index(248069) + 1
+            request.max_tokens = min(request.max_tokens, boundary + visible)
+            del request.b70_visible_tokens
+        return super()._update_request_with_output(request, new_token_ids, is_stale)
+
     def _record_gpu_prefix_reuse(self, request, hit_tokens):
         """Keep CPU replacement policy informed of GPU hits in every hybrid group.
 

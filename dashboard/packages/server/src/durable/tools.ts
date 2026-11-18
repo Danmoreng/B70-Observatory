@@ -7,7 +7,7 @@ import {
   hook,
   type ToolRegistration,
 } from '@earendil-works/pi-durable';
-import type { Message } from '@earendil-works/pi-ai';
+import type { ImageContent, Message } from '@earendil-works/pi-ai';
 import { obj, str, type Schema } from '@earendil-works/pi-schema';
 import { getOrThrow, type ExecutionEnv } from '@earendil-works/pi-durable/env';
 import { registerBrowserTools, registerDesktopTools } from '@observatory/runner';
@@ -129,26 +129,55 @@ export async function sandboxToolCall(
 }
 
 export function trimModelImages(messages: readonly Message[]): Message[] {
-  let users = 4,
-    tools = 2;
-  return [...messages]
-    .reverse()
-    .map((message) => {
-      if (!Array.isArray(message.content)) return message;
-      const content = [...message.content]
-        .reverse()
-        .map((block) => {
-          if (block.type !== 'image') return block;
-          const keep = message.role === 'user' ? users-- > 0 : tools-- > 0;
-          return keep
-            ? block
-            : {
-                type: 'text' as const,
-                text: 'Älteres Bild aus dem Modellkontext entfernt; es bleibt im Gespräch gespeichert.',
-              };
-        })
-        .reverse();
-      return { ...message, content } as Message;
-    })
-    .reverse();
+  // Keep user attachments at the instruction that introduced them. Tool
+  // screenshots rotate much more often. Their historical reference stays
+  // byte-stable while the two current images travel together in one frame near the end of the prompt.
+  let userImages = 0;
+  for (const message of messages) {
+    if (message.role === 'user' && Array.isArray(message.content))
+      userImages += message.content.filter((block) => block.type === 'image').length;
+  }
+  let number = 0;
+  const previews: Array<{ label: string; image: ImageContent }> = [];
+  let previewAnchor = -1;
+  let assistantTurns = 0;
+  const result = messages.map((message, index) => {
+    // Advance together every four assistant turns. Text/tool work after an
+    // old screenshot can then stay cached when a new screenshot arrives.
+    if (message.role === 'assistant' && ++assistantTurns % 4 === 0) previewAnchor = index;
+    if (!Array.isArray(message.content) || !message.content.some((block) => block.type === 'image'))
+      return message;
+    const content = message.content.map((block) => {
+      if (block.type !== 'image') return block;
+      if (message.role === 'user') {
+        if (userImages-- <= 4) return block;
+        return {
+          type: 'text' as const,
+          text: 'Älteres Bild aus dem Modellkontext entfernt; es bleibt im Gespräch gespeichert.',
+        };
+      }
+      if (message.role !== 'toolResult') return block;
+      previewAnchor = index;
+      const label = `Werkzeugbild ${++number} (${message.toolName})`;
+      previews.push({ label, image: block });
+      if (previews.length > 2) previews.shift();
+      return { type: 'text' as const, text: '[' + label + ']' };
+    });
+    return { ...message, content } as Message;
+  });
+  if (previews.length) {
+    const frame: Extract<Message, { role: 'user' }> = {
+      role: 'user',
+      timestamp: messages[previewAnchor]!.timestamp,
+      content: previews.flatMap(({ label, image }) => [
+        { type: 'text' as const, text: label + ' aus dem Werkzeugverlauf:' },
+        image,
+      ]),
+    };
+    // Keep all results of a single parallel tool call together.
+    let tail = previewAnchor + 1;
+    while (tail < result.length && result[tail]?.role === 'toolResult') tail++;
+    result.splice(tail, 0, frame);
+  }
+  return result;
 }

@@ -77,7 +77,7 @@ class RamProtocol(unittest.TestCase):
             self.client.store(key, data)
             self.client.control(b'F')
             self.assertFalse(self.store.discardable)
-        with patch('prefix_ram.host_available', return_value=9 * GIB):
+        with patch('prefix_ram.host_available', return_value=6 * GIB):
             self.store.check_pressure()
             self.assertTrue(self.store.discardable)
         with patch('prefix_ram.host_available', return_value=4 * GIB):
@@ -87,6 +87,35 @@ class RamProtocol(unittest.TestCase):
             self.client.store(key, data)
             self.client.control(b'F')
             self.assertFalse(self.client.index())
+
+    def test_moderate_release_limits_bytes_per_poll_even_if_pressure_persists(self):
+        a, b = b'a' * 32, b'b' * 32
+        for key in (a, b):
+            self.client.store(key, b'x' * mmap.PAGESIZE)
+        with patch('prefix_ram.host_available', return_value=9 * GIB):
+            self.store.release_until_available(11 * GIB, max_bytes=mmap.PAGESIZE)
+        self.assertEqual(self.client.index(), {b})
+
+    def test_transient_image_pressure_frees_oldest_complete_block(self):
+        a, b = b'a' * 32, b'b' * 32
+        with patch('prefix_ram.host_available', return_value=27 * GIB):
+            self.client.control(b'T')
+            for key in (a, b):
+                self.client.store(key, b'x' * mmap.PAGESIZE)
+            self.client.control(b'F')
+        with patch('prefix_ram.host_available', side_effect=[9 * GIB, 9 * GIB, 11 * GIB]):
+            self.store.check_pressure()
+        self.assertEqual(self.client.index(), {b})
+        self.assertFalse(self.store.discardable)
+
+    def test_image_start_preserves_newer_blocks_once_headroom_recovers(self):
+        data = b'p' * mmap.PAGESIZE
+        a, b = b'a' * 32, b'b' * 32
+        self.client.store(a, data)
+        self.client.store(b, data)
+        with patch('prefix_ram.host_available', side_effect=[24 * GIB, 25 * GIB, 25 * GIB]):
+            self.client.control(b'F')
+        self.assertEqual(self.client.index(), {b})
 
     def test_interrupted_write_is_never_published(self):
         key = b'i' * 32

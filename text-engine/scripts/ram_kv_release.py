@@ -62,6 +62,11 @@ def load_overlay(repo, release, environ=None):
                              'spec_name': 'BoundedXPUOffloadingSpec',
                              'spec_module_path': 'xpu_cpu_offload',
                              'blocks_per_chunk': 1, 'eviction_policy': 'arc', 'store_threshold': 0}}}
+    interval = data.get('prefix_cache_retention_interval')
+    if interval is not None:
+        if type(interval) is not int or interval <= 0 or interval % release['vllm_config']['block_size']:
+            raise ValueError('Prefix checkpoint interval must be a positive multiple of the physical block size')
+        overlay['prefix_cache_retention_interval'] = interval
     if switch_ram:
         overlay['switch_ram_gib'] = switch_ram
         overlay['transfer']['kv_load_failure_policy'] = 'recompute'
@@ -78,9 +83,12 @@ def serving_arguments(argv, overlay):
     args = list(argv)
     if overlay is None:
         return args
-    for flag, value in [('--watermark', overlay['watermark']),
-                        ('--scheduler-cls', overlay['scheduler']),
-                        ('--kv-transfer-config', json.dumps(overlay['transfer']))]:
+    flags = [('--watermark', overlay['watermark']),
+             ('--scheduler-cls', overlay['scheduler']),
+             ('--kv-transfer-config', json.dumps(overlay['transfer']))]
+    if 'prefix_cache_retention_interval' in overlay:
+        flags.append(('--prefix-cache-retention-interval', str(overlay['prefix_cache_retention_interval'])))
+    for flag, value in flags:
         if flag in args:
             index = args.index(flag)
             del args[index:index + 2]

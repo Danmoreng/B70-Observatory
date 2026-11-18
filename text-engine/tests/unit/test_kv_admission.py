@@ -39,6 +39,30 @@ class AdmissionTests(unittest.TestCase):
             block_pool=SimpleNamespace(get_num_free_blocks=lambda: free), watermark_blocks=15)
         return policy
 
+    def test_visible_budget_after_native_context_clamp_and_speculative_decode(self):
+        p = self.policy()
+        params = SimpleNamespace(extra_args={'b70_visible_tokens': 4}, thinking_token_budget=8192)
+        r = SimpleNamespace(sampling_params=params, max_tokens=4, num_prompt_tokens=p.max_model_len-10, num_output_tokens=2)
+        with patch.object(NativeScheduler, 'add_request', create=True):
+            p.add_request(r)
+        self.assertEqual(params.thinking_token_budget, 6)
+        with patch.object(NativeScheduler, '_update_request_with_output', create=True):
+            p._update_request_with_output(r, [248069], is_stale=True)
+            self.assertEqual(r.max_tokens, 10)
+            p._update_request_with_output(r, [25, 248069, 31, 32])
+            self.assertEqual(r.max_tokens, 8)
+            p._update_request_with_output(r, [248069])
+            self.assertEqual(r.max_tokens, 8)
+
+    def test_full_visible_limit_keeps_reasoning_for_long_pi_outputs(self):
+        p = self.policy()
+        params = SimpleNamespace(extra_args={'b70_visible_tokens': 16384}, thinking_token_budget=8192)
+        r = SimpleNamespace(sampling_params=params, max_tokens=16384, num_prompt_tokens=100)
+        with patch.object(NativeScheduler, 'add_request', create=True):
+            p.add_request(r)
+        self.assertEqual((r.max_tokens, params.max_tokens, params.thinking_token_budget),
+                         (24576, 24576, 8192))
+
     def test_two_200k_inputs_wait_instead_of_overadmitting_during_first_chunk(self):
         first = request('first', 200000, 16384, computed=3200)
         candidate = request('second', 200000, 16384)

@@ -161,11 +161,20 @@ describe('gateway group 1: chat completions against the mock vLLM', () => {
     const upstreamHeaders = h.mock.lastRequest()?.headers ?? {};
     expect(upstreamHeaders['authorization']).toBe(`Bearer ${SECRET}`);
     expect(upstreamHeaders['accept']).toBe('application/json');
+    expect(upstreamHeaders['x-b70-output-budget']).toBe('visible');
     expect(upstreamHeaders['content-type']).toBeDefined();
     // …and nothing that is not on the allowlist.
     expect(upstreamHeaders['x-custom-evil']).toBeUndefined();
     expect(upstreamHeaders['cookie']).toBeUndefined();
     expect(JSON.stringify(upstreamHeaders)).not.toContain('x-custom-evil');
+  });
+
+  it('keeps a total limit for ordinary API callers and explicit Pi opt-outs', async () => {
+    for (const headers of [{}, { 'x-observatory-origin': 'pi', 'x-b70-output-budget': 'total' }]) {
+      const response = await postChat(h.base, chatBody('ok'), headers as Record<string, string>);
+      await response.text();
+      expect(h.mock.lastRequest()?.headers['x-b70-output-budget']).toBeUndefined();
+    }
   });
 
   it('assigns a stable request id: response header == database row', async () => {

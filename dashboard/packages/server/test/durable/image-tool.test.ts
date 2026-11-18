@@ -155,18 +155,19 @@ it.each([
           .reverse()
           .find((message) => message.role === 'toolResult');
         const previewName = count > 1 ? `hero-${count - 1}` : 'hero';
-        expect(
-          latest &&
-            Array.isArray(latest.content) &&
-            latest.content.some(
-              (block) =>
-                block.type === 'image' &&
-                block.data ===
-                  files
-                    .get(`/workspace/site/public/${previewName}.preview.webp`)
-                    ?.toString('base64')
-            )
-        ).toBe(true);
+        const label = `Werkzeugbild ${count} (generate_image)`;
+        expect(latest?.content).toContainEqual({ type: 'text', text: '[' + label + ']' });
+        const attachments = context.messages.at(-1);
+        expect(attachments?.role).toBe('user');
+        const blocks = attachments && Array.isArray(attachments.content) ? attachments.content : [];
+        const index = blocks.findIndex(
+          (block) => block.type === 'text' && block.text === label + ' aus dem Werkzeugverlauf:'
+        );
+        expect(index).toBeGreaterThanOrEqual(0);
+        expect(blocks[index + 1]).toMatchObject({
+          type: 'image',
+          data: files.get(`/workspace/site/public/${previewName}.preview.webp`)?.toString('base64'),
+        });
         expect(files.get('/workspace/site/public/hero.png')?.subarray(0, 8).toString('hex')).toBe(
           '89504e470d0a1a0a'
         );

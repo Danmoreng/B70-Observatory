@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "request_defaults_sha256": "88eebbd1d64d848f66478129875a66b02bf264f9ae026bc1496b4bbcb183ece2",
+  "request_defaults_sha256": "708356145c58cf0fd5ecd8bebaa6c6c9b8e6d71569379a6772530c9c23188b35",
   "checkpoint_files_sha256": {
     "config.json": "dab9abc478e1b1b928ef354f27a26fc90e8191a4a3ce5f3d19aa21558216b267",
     "generation_config.json": "e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e",
@@ -214,7 +214,7 @@
   "qualification_note": "Operator approved the exact PTI/M04-fixed R12 after all final-image gates, aligned quality panels, natural tool-agent4/4 success, full70-wave serving comparison and38-wave follow-up. Accept +1.82% full summed wave time and observed4K latency cost; rare2K stalls remain recorded although not reproduced. Standard compilation, MTP3, native graphs and12GiB RAM retained. Previous productionv7 is the immediate rollback.",
   "ram_kv_runtime": {
     "path": "config/production_ram_kv.json",
-    "sha256": "102303fa14507f6936f5c74fb4488128bbb06acf0535017b10d901589141ea2b"
+    "sha256": "31c5b7e046e3c9e5b7ec8aec15252913138988afa84bae760f4a5447956471a1"
   },
   "immediate_rollback_image_id": "sha256:dc81825313d587ca22eaeeceb26808a8eed63cfb84b9dde22599223b8dab59d1",
   "direct_build": {

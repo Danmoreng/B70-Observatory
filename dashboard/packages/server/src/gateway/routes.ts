@@ -346,6 +346,13 @@ function createContext(
       }
     },
   };
+  if (request.url.split('?')[0] === CHAT_COMPLETIONS_ENDPOINT) {
+    const mode = request.headers['x-b70-output-budget'];
+    const origin = requestOrigin(request.headers);
+    if (mode === 'visible' || (mode === undefined && (origin === 'pi' || origin === 'web'))) {
+      ctx.headers['x-b70-output-budget'] = 'visible';
+    }
+  }
   // The client socket is the reliable abort signal: it closes when the
   // client really goes away. (The request's own 'close' event fires as
   // soon as the request body is fully received – too early for this.)

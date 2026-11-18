@@ -107,12 +107,20 @@ class RamStore:
         while self.entries:
             self.discard(next(iter(self.entries)))
 
+    def release_until_available(self, target, max_bytes=None):
+        # Oldest first. Sample real host headroom after each unmap because a
+        # discarded or already reclaimed page may free less than its size.
+        starting_size = self.used
+        while self.entries and host_available() < target:
+            if max_bytes is not None and starting_size - self.used >= max_bytes:
+                break
+            self.discard(next(iter(self.entries)))
+
     def image_start(self):
         self.image_phase = True
         # The image unit can charge at most 24 GiB. Keep blocks only when the
         # whole unit limit plus 1 GiB is available AFTER accounting for them.
-        if host_available() < 25 * GIB:
-            self.clear()
+        self.release_until_available(25 * GIB)
         self.check_pressure()
 
     def check_pressure(self):
@@ -120,12 +128,22 @@ class RamStore:
             return
         available = host_available()
         if available < 5 * GIB:
-            self.clear()
-        elif self.image_phase and available < 10 * GIB and not self.discardable:
-            # No copies or disk writes. Linux may reclaim any of these pages.
+            if self.image_phase:
+                self.clear()
+            else:
+                self.release_until_available(6 * GIB)
+        elif self.image_phase and available < 7 * GIB and not self.discardable:
+            # At acute pressure Linux may reclaim every surviving page immediately.
             for pages, _ in self.entries.values():
                 pages.madvise(mmap.MADV_FREE)
             self.discardable = True
+        elif self.image_phase and available < 10 * GIB:
+            # Release complete old blocks first. Flagging all blocks at the
+            # first short dip can leave holes in every otherwise usable prefix.
+            # One poll can coincide with a brief multi-GiB allocation. Pace
+            # moderate shedding, and let the acute thresholds take over if
+            # the image continues allocating quickly.
+            self.release_until_available(11 * GIB, max_bytes=GIB // 4)
 
     def text_start(self):
         if self.discardable:

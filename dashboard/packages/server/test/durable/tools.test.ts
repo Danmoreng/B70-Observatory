@@ -63,10 +63,21 @@ describe('Durable tool boundary', () => {
       'user-6',
       'user-7',
       'user-8',
-      'tool-8',
       'user-9',
+      'tool-8',
       'tool-9',
     ]);
+    const previous = trimModelImages(messages.slice(0, -2));
+    const previousTool = previous.find(
+      (message) => message.role === 'toolResult' && message.toolCallId === 'call-7'
+    );
+    expect(
+      projection.find((message) => message.role === 'toolResult' && message.toolCallId === 'call-7')
+    ).toEqual(previousTool);
+    const followup = { role: 'user', content: 'Use the second screenshot', timestamp: 12 } as const;
+    expect(trimModelImages([...messages, followup]).at(-1)).toBe(followup);
+    const more = { role: 'user', content: 'One more question', timestamp: 13 } as const;
+    expect(trimModelImages([...messages, followup, more]).slice(0, -2)).toEqual(projection);
     expect(JSON.stringify(messages)).toBe(before);
     expect(JSON.stringify(projection)).toContain('reference 0');
   });
