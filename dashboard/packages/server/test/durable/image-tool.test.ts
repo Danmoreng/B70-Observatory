@@ -12,9 +12,11 @@ import {
   createAssistantMessageEventStream,
 } from '@earendil-works/pi-ai';
 import { defineTool } from '@earendil-works/pi-durable';
+import type { ToolExecutionApi } from '@earendil-works/pi-durable';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { obj } from '@earendil-works/pi-schema';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
-import { imageTools, imageDestination } from '../../src/durable/image-tool.js';
+import { imageTools } from '../../src/durable/image-tool.js';
 import { DurableAgentManager } from '../../src/durable/manager.js';
 import { GpuScheduler } from '../../src/engine/gpu-scheduler.js';
 import { ImageJobs } from '../../src/engine/image-jobs.js';
@@ -25,30 +27,47 @@ import { validateAgentImage } from '@observatory/runner';
 
 afterEach(() => vi.useRealTimers());
 
-it('rejects host destinations and traversal while accepting project PNG paths', () => {
-  expect(imageDestination('/workspace/site', 'public/hero.png')).toBe(
-    '/workspace/site/public/hero.png'
+it('advertises prompt and an optional directory and rejects invalid locations before generating', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-11-15T11:00:00+01:00'));
+  const gateway = vi.fn<typeof fetch>();
+  const [tool] = imageTools(
+    {
+      runId: 'directory-validation',
+      gatewayUrl: 'http://localhost',
+      gatewayToken: 'test-image-secret',
+      cancelOnAbort: () => false,
+    },
+    gateway
   );
-  for (const path of [
-    '/etc/passwd.png',
-    '../hero.png',
-    'x\\hero.png',
-    '/workspace/.git/hero.png',
-    '/workspace/site/.git/hero.png',
-    'hero.svg',
-  ])
-    expect(() => imageDestination('/workspace', path)).toThrow();
+  expect(tool!.parameters).toMatchObject({ required: ['prompt'], properties: { directory: {} } });
+  expect(tool!.parameters).not.toHaveProperty('properties.path');
+  const api = { env: { cwd: '/workspace/site' } } as ToolExecutionApi;
+  for (const location of [
+    { directory: '/etc' },
+    { directory: '../assets' },
+    { directory: 'public\\assets' },
+    { directory: '/workspace/.git' },
+    { directory: '/workspace/site/.git/assets' },
+    { path: '/outside/file.jpg' },
+  ]) {
+    await expect(
+      tool!.execute({ prompt: 'A misty lake', ...location }, api, BACKGROUND_CONTEXT)
+    ).rejects.toThrow('Use a directory inside /workspace');
+  }
+  expect(gateway).not.toHaveBeenCalled();
 });
 
 it.each([
-  { restart: false, count: 1, cancel: false },
-  { restart: true, count: 1, cancel: false },
-  { restart: false, count: 3, cancel: false },
-  { restart: true, count: 3, cancel: false },
-  { restart: false, count: 3, cancel: true },
+  { restart: false, count: 1, cancel: false, legacy: undefined },
+  { restart: true, count: 1, cancel: false, legacy: 'png' },
+  { restart: false, count: 1, cancel: false, legacy: 'jpg' },
+  { restart: false, count: 3, cancel: false, legacy: undefined },
+  { restart: true, count: 3, cancel: false, legacy: 'png' },
+  { restart: false, count: 3, cancel: true, legacy: undefined },
 ])(
-  'two Pi Durable agents drain, render $count images with one swap (restarted: $restart, cancelled: $cancel)',
-  async ({ restart, count, cancel }) => {
+  'two Pi Durable agents drain, render $count images with one swap (restarted: $restart, cancelled: $cancel, old path: $legacy)',
+  async ({ restart, count, cancel, legacy }) => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-15T11:00:00+01:00'));
     const root = await mkdtemp(join(tmpdir(), 'b70-pi-images-')),
@@ -140,9 +159,9 @@ it.each([
         Array.from({ length: count }, (_, index) =>
           fauxToolCall('generate_image', {
             prompt: 'A red boat on a misty lake',
-            path: index ? `public/hero-${index}.png` : 'public/hero.png',
-            sizeId: 'landscape-quick',
-            seed: 5,
+            ...(legacy ? { path: `public/hero-${index}.${legacy}` } : {}),
+            ...(index > 0 && !legacy ? { directory: 'public/assets' } : {}),
+            ...(legacy || index > 0 ? { sizeId: 'landscape-quick', seed: 5 } : {}),
           })
         ).flatMap((call, index) =>
           count > 1 && index === 1 ? [fauxToolCall('proof', {}), call] : [call]
@@ -154,7 +173,14 @@ it.each([
         const latest = [...context.messages]
           .reverse()
           .find((message) => message.role === 'toolResult');
-        const previewName = count > 1 ? `hero-${count - 1}` : 'hero';
+        const pathsOf = (message: typeof result) => {
+          const text = message?.content.find((block) => block.type === 'text');
+          if (!text) throw new Error('Missing image result paths');
+          return JSON.parse(text.text);
+        };
+        const firstPaths = pathsOf(result);
+        const lastPaths = pathsOf(latest);
+        const webSize = legacy ? { width: 1536, height: 1024 } : { width: 1920, height: 1280 };
         const label = `Werkzeugbild ${count} (generate_image)`;
         expect(latest?.content).toContainEqual({ type: 'text', text: '[' + label + ']' });
         const attachments = context.messages.at(-1);
@@ -166,26 +192,28 @@ it.each([
         expect(index).toBeGreaterThanOrEqual(0);
         expect(blocks[index + 1]).toMatchObject({
           type: 'image',
-          data: files.get(`/workspace/site/public/${previewName}.preview.webp`)?.toString('base64'),
+          data: files.get(lastPaths.previewPath)?.toString('base64'),
         });
-        expect(files.get('/workspace/site/public/hero.png')?.subarray(0, 8).toString('hex')).toBe(
-          '89504e470d0a1a0a'
-        );
-        expect(
-          validateAgentImage('image/webp', files.get('/workspace/site/public/hero.preview.webp')!)
-        ).toMatchObject({ ok: true, width: 1200, height: 800 });
-        expect(
-          validateAgentImage('image/webp', files.get('/workspace/site/public/hero.webp')!)
-        ).toMatchObject({ ok: true, width: 1536, height: 1024 });
-        const text =
-          result &&
-          Array.isArray(result.content) &&
-          result.content.find((block) => block.type === 'text');
-        expect(text && JSON.parse(text.text)).toMatchObject({
-          previewPath: '/workspace/site/public/hero.preview.webp',
-          webPath: '/workspace/site/public/hero.webp',
+        expect(files.get(firstPaths.path)?.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+        expect(validateAgentImage('image/webp', files.get(firstPaths.previewPath)!)).toMatchObject({
+          ok: true,
+          width: 1200,
+          height: 800,
+        });
+        expect(validateAgentImage('image/webp', files.get(firstPaths.webPath)!)).toMatchObject({
+          ok: true,
+          ...webSize,
+        });
+        const firstStem =
+          legacy === 'png'
+            ? '/workspace/site/public/hero-0'
+            : `/workspace/site/${legacy === 'jpg' ? 'public' : 'assets/generated'}/image-${firstPaths.jobId}`;
+        expect(firstPaths).toMatchObject({
+          path: firstStem + '.png',
+          previewPath: firstStem + '.preview.webp',
+          webPath: firstStem + '.webp',
           preview: { width: 1200, height: 800 },
-          web: { width: 1536, height: 1024, quality: 82 },
+          web: { ...webSize, quality: 82 },
         });
         expect(events.at(-1)).toBe('text');
         expect(JSON.stringify(context.messages)).not.toContain('test-image-secret');
@@ -324,8 +352,15 @@ it.each([
             (item) => item.toolName === 'generate_image' && item.images?.length === 1
           )
       ).toHaveLength(count);
-      for (let index = 1; index < count; index++)
-        expect(files.has(`/workspace/site/public/hero-${index}.webp`)).toBe(true);
+      const destinations = [...files.keys()].filter((name) => name.endsWith('.png'));
+      expect(destinations).toHaveLength(count);
+      for (const destination of destinations.slice(1)) {
+        expect(destination).toMatch(
+          legacy === 'png'
+            ? /^\/workspace\/site\/public\/hero-\d+\.png$/
+            : /^\/workspace\/site\/public\/assets\/image-[a-f0-9]{32}\.png$/
+        );
+      }
       expect(a.faux.state.callCount).toBe(2);
       expect(b.faux.state.callCount).toBe(2);
     } finally {

@@ -79,7 +79,7 @@ export function createDashboardTools(browser: boolean, desktop = false) {
         key: 'b70-tools',
         render: () =>
           'Du arbeitest in /workspace in einer isolierten Entwicklungsumgebung. Nutze read, edit, write und bash. Bilder aus read, Browser- und Desktop-Tools kannst du sehen. ' +
-          "Für Bildkonvertierung stehen magick (ImageMagick) und ffmpeg in bash bereit, ohne Paketinstallation. Für Websites verwende komprimierte WebP-Dateien in passender Anzeigegröße statt großer PNG/JPEG-Originale. Beispiel: magick input.png -auto-orient -resize '1920x1920>' -strip -quality 82 output.webp. generate_image liefert bereits webPath für Websites und previewPath zum erneuten Ansehen; lies nicht das große Original-PNG. Ältere Inline-Bilder können aus dem Modellkontext fallen; previewPath bleibt im Projekt lesbar. " +
+          'Bei generate_image reicht prompt. Setze directory auf den Zielordner, wenn die App Bilder dort erwartet. Verwende den zurückgegebenen webPath direkt in der App. Mit read und previewPath kannst du das Bild später erneut ansehen. Für zusätzliche Bildbearbeitung stehen magick und ffmpeg in bash bereit. ' +
           (desktop
             ? 'Für native GUI-Tests: baue die Anwendung mit bash, starte desktop_start und desktop_launch, prüfe mit desktop_observe und desktop_action. Verwende für Eingaben die snapshot-ID und Pixelkoordinaten des neuesten Desktop-Bildes. Eine neue Laufzeit hat einen neuen Desktop; Quellcode bleibt im Workspace erhalten. '
             : '') +

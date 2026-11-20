@@ -1,5 +1,6 @@
 import { deflateSync } from 'node:zlib';
 import { ComfyImages } from '../../src/engine/comfy-images.js';
+import { IMAGE_SIZES } from '../../src/engine/image-contract.js';
 
 export const PREVIEW = Buffer.from(
   'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA',
@@ -85,8 +86,15 @@ export function comfyFixture() {
               },
             }
           : {};
-    if (target.pathname === '/view')
-      return new Response(target.searchParams.has('preview') ? PREVIEW : png(1536, 1024));
+    if (target.pathname === '/view') {
+      if (target.searchParams.has('preview')) return new Response(PREVIEW);
+      const inputs = state.graph['10']!.inputs;
+      const size = Object.values(IMAGE_SIZES).find(
+        (entry) => entry.ratio === inputs.aspect_ratio && entry.preset === inputs.megapixels
+      );
+      if (!size) throw new Error('Fixture received an unknown image preset');
+      return new Response(png(size.width, size.height));
+    }
     if (target.pathname === '/interrupt') {
       state.interrupted++;
       state.finished = true;

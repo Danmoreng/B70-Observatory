@@ -20,26 +20,41 @@ import {
 import { assertMayStartWork } from './working-hours.js';
 import { createImageAssets } from './image-assets.js';
 
-export function imageDestination(cwd: string, path: string) {
-  if (path.includes('\0') || path.includes('\\') || path.split('/').includes('..'))
-    throw new Error('Use a .png filename inside /workspace, for example public/hero.png.');
-  const destination = posix.resolve(cwd, path);
-  if (
-    !destination.startsWith('/workspace/') ||
-    !destination.endsWith('.png') ||
-    destination.split('/').includes('.git')
-  )
-    throw new Error('Use a .png filename inside /workspace, for example public/hero.png.');
-  return destination;
-}
+const defaultDirectory = 'assets/generated';
 const imageCall = z
   .object({
     prompt: ImageInputSchema.shape.prompt,
-    path: z.string().min(1).max(512),
+    directory: z.string().min(1).max(512).optional(),
+    // Saved calls can still contain a path from the older tool schema.
+    path: z.string().min(1).max(512).optional(),
     sizeId: ImageInputSchema.shape.sizeId,
     seed: ImageInputSchema.shape.seed,
   })
   .strict();
+
+function workspaceLocation(cwd: string, path: string) {
+  const location = posix.resolve(cwd, path);
+  const segments = path.split('/');
+  if (
+    path.includes('\0') ||
+    path.includes('\\') ||
+    segments.includes('..') ||
+    (location !== '/workspace' && !location.startsWith('/workspace/')) ||
+    location.split('/').includes('.git')
+  )
+    throw new Error('Use a directory inside /workspace, for example public/assets.');
+  return location;
+}
+
+function imageLocation(cwd: string, args: z.infer<typeof imageCall>) {
+  if (args.directory === undefined && args.path !== undefined) {
+    const path = workspaceLocation(cwd, args.path);
+    if (path.endsWith('.png')) return { directory: posix.dirname(path), legacyPath: path };
+    return { directory: path === '/workspace' ? path : posix.dirname(path) };
+  }
+  return { directory: workspaceLocation(cwd, args.directory ?? defaultDirectory) };
+}
+
 /** Inspect only this tool's already committed assistant entry, never live partials.
  * Keys are stable across tool scheduling/replay; ordinary legacy calls keep their
  * task-based keys. No code/tool execution order or model message is changed.
@@ -64,7 +79,9 @@ async function imageRound(
       const args = imageCall.safeParse(call.arguments);
       if (!args.success) return [];
       try {
-        imageDestination(api.env!.cwd, args.data.path);
+        const location = imageLocation(api.env!.cwd, args.data);
+        // Keep the membership of batches recorded under the old PNG-only schema.
+        if (args.data.directory === undefined && args.data.path && !location.legacyPath) return [];
       } catch {
         return [];
       }
@@ -112,29 +129,35 @@ export function imageTools(
     defineTool({
       name: 'generate_image',
       description:
-        'Generate an original image with local H3 INT8. Saves the full PNG, a compressed WebP web asset (max 1920px, quality 82), and a readable WebP preview (max 1200px) in the project. Returns the preview inline plus previewPath and webPath. Inspect this preview directly; use read on previewPath to inspect it again, never read the large original PNG. Use webPath in websites; preserve the PNG as a source asset. When you need multiple independent images, issue all generate_image calls together in one assistant turn: they are automatically rendered serially in a shared GPU batch, without reloading text between images. Other agents finish their current model turns before the switch and resume after the batch. Describe each complete desired image in prompt. Use existing generated assets when possible. Changing a picture requires a new call; an interrupted replay reattaches to the same job. No transparent-background or editing mode is currently provided.',
-      parameters: obj({
-        prompt: str({ minLength: 1, maxLength: 12000 }),
-        path: str({
-          minLength: 1,
-          maxLength: 512,
-          description:
-            'New PNG asset path, relative to the project working directory. Existing different files are never overwritten.',
-        }),
-        sizeId: opt(
-          str({
-            pattern: '^(landscape-(quick|4|8)|portrait-(quick|4|8)|square-4)$',
-            description: 'Defaults to landscape-4 (2496×1664); quick is 1.5 MP, 8 is about 8 MP.',
-          })
-        ),
-        seed: opt(int({ minimum: -1, maximum: 4294967295 })),
-      }),
+        'Generate an original image with local H3 INT8. A prompt is enough. The tool names the files and returns path (source PNG), webPath (compressed WebP for use in apps), and previewPath (WebP for read), plus the inline preview. Inspect the preview directly and use webPath as the asset. For multiple independent images, issue all calls together in one assistant turn so they can render in one GPU batch. Describe each complete image in its prompt. This tool generates new images with an opaque background.',
+      parameters: obj(
+        {
+          prompt: str({ minLength: 1, maxLength: 12000 }),
+          directory: opt(
+            str({
+              minLength: 1,
+              maxLength: 512,
+              description:
+                'Output folder inside the project, for example public/assets. Defaults to assets/generated relative to the working directory.',
+            })
+          ),
+          sizeId: opt(
+            str({
+              pattern: '^(landscape-(quick|4|8)|portrait-(quick|4|8)|square-4)$',
+              description: 'Defaults to landscape-4 (2496×1664); quick is 1.5 MP, 8 is about 8 MP.',
+            })
+          ),
+          seed: opt(int({ minimum: -1, maximum: 4294967295 })),
+        },
+        { open: true }
+      ), // Execution also accepts the old path field when replaying saved calls.
       executionMode: 'sequential',
       replay: 'safe',
-      async execute(args, api, context) {
+      async execute(rawArgs, api, context) {
         if (!api.env) throw new Error('Sandbox unavailable.');
         assertMayStartWork();
-        const destination = imageDestination(api.env.cwd, args.path);
+        const args = imageCall.parse(rawArgs);
+        const location = imageLocation(api.env.cwd, args);
         let key = createHash('sha256')
           .update(JSON.stringify([binding.runId, api.taskId]))
           .digest('hex');
@@ -277,6 +300,8 @@ export function imageTools(
           if (original.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a')
             throw new Error('Image artifact is not PNG.');
           const assets = await createImageAssets(original);
+          const destination =
+            location.legacyPath ?? posix.join(location.directory, `image-${id}.png`);
           const previewPath = destination.slice(0, -4) + '.preview.webp';
           const webPath = destination.slice(0, -4) + '.webp';
           getOrThrow(
@@ -284,8 +309,8 @@ export function imageTools(
               [
                 '/usr/bin/node',
                 '-e',
-                "require('node:fs').mkdirSync(require('node:path').dirname(process.argv[1]),{recursive:true})",
-                destination,
+                "require('node:fs').mkdirSync(process.argv[1],{recursive:true})",
+                location.directory,
               ],
               { timeout: 10 },
               context
@@ -314,7 +339,7 @@ export function imageTools(
             );
             if (install.exitCode !== 0)
               throw new Error(
-                'Image destination could not be installed without overwrite. Choose a new path; the generated job is retained.'
+                'Image files could not be saved without overwriting existing files. Choose a different directory.'
               );
           }
           return {
@@ -340,7 +365,7 @@ export function imageTools(
                   seed: result.seed,
                   sizeId: result.sizeId,
                   model: 'MiniMax H3 Image INT8',
-                  note: 'Inspect the inline preview. To inspect again later, read previewPath. Use webPath in the website, not the full-resolution PNG. ImageMagick (magick) and FFmpeg are available in bash for additional sizes/conversions.',
+                  note: 'Use webPath in the app. Inspect the inline preview or read previewPath later.',
                 }),
               },
               {
