@@ -35,7 +35,13 @@ interface FakeChrome {
 }
 
 function fakeChrome(
-  options: { auto?: boolean; title?: string; shotData?: string } = {}
+  options: {
+    auto?: boolean;
+    title?: string;
+    shotData?: string;
+    navigation?: 'refused' | 'hash' | 'stalled';
+    evaluate?: (expression: string) => unknown;
+  } = {}
 ): FakeChrome {
   let dataListener: ((chunk: Buffer) => void) | undefined;
   let exitListener: (() => void) | undefined;
@@ -46,6 +52,7 @@ function fakeChrome(
     killed: [] as string[],
   };
   let buffer = '';
+  let loader = 0;
 
   const handle: BrowserProcess = {
     get exitCode() {
@@ -113,7 +120,10 @@ function fakeChrome(
         result.targetInfos = [{ targetId: 'target-1', type: 'page' }];
         break;
       case 'Runtime.evaluate':
-        result.result = { value: options.title ?? 'Testseite' };
+        result.result = {
+          value:
+            options.evaluate?.(String(request.params.expression)) ?? options.title ?? 'Testseite',
+        };
         break;
       case 'Page.captureScreenshot':
         result.data = options.shotData ?? PNG_820x1180.toString('base64');
@@ -121,15 +131,36 @@ function fakeChrome(
       case 'Page.getLayoutMetrics':
         result.cssContentSize = { width: 820, height: 9000 };
         break;
-      case 'Page.navigate':
-      case 'Page.reload':
+      case 'Page.getFrameTree':
+        result.frameTree = { frame: { id: 'frame-1', loaderId: `loader-${loader}` } };
+        break;
+      case 'Page.navigate': {
         result.frameId = 'frame-1';
-        push({ id: request.id, method: 'Page.loadEventFired', params: { timestamp: 1 } });
+        if (options.navigation === 'hash' && String(request.params.url).includes('#')) break;
+        if (options.navigation === 'refused') {
+          result.errorText = 'net::ERR_CONNECTION_REFUSED';
+          break;
+        }
+        result.loaderId = `loader-${++loader}`;
+        if (options.navigation !== 'stalled') pushLifecycle('frame-1', String(result.loaderId));
+        // A later frame must not replace the cached notification for the main frame.
+        pushLifecycle('subframe', 'subframe-loader');
+        break;
+      }
+      case 'Page.reload':
+        pushLifecycle('frame-1', `loader-${++loader}`);
         break;
       default:
         break;
     }
     push({ id: request.id, result });
+  }
+
+  function pushLifecycle(frameId: string, loaderId: string) {
+    push({
+      method: 'Page.lifecycleEvent',
+      params: { name: 'DOMContentLoaded', frameId, loaderId },
+    });
   }
 
   return {
@@ -203,10 +234,13 @@ describe('browser preview helper', () => {
       '.langswitch button:nth-child(2)',
       '.langswitch button + button',
       'main > button:not([disabled])',
+      'a[href="#/projects"]',
+      '[data-value="a;b"]',
+      '#ergebnis\\:1',
     ]) {
       expect(sanitizeSelector(selector)).toBe(selector);
     }
-    for (const selector of ['', 'a'.repeat(257), 'button;alert(1)', 'javascript:alert(1)']) {
+    for (const selector of ['', '   ', 'a'.repeat(257)]) {
       expect(() => sanitizeSelector(selector)).toThrowError(BrowserInputError);
     }
   });
@@ -332,6 +366,41 @@ describe('browser preview helper', () => {
     await session.close();
   });
 
+  it('distinguishes an unreachable server from a stalled document and waits only for the main frame', async () => {
+    const rejected = sessionWith(fakeChrome({ navigation: 'refused' }));
+    const stalled = sessionWith(fakeChrome({ navigation: 'stalled' }), { navigationTimeoutMs: 30 });
+    const viewport = { width: 820, height: 1180 };
+    try {
+      await expect(rejected.navigate('http://127.0.0.1:5173/', viewport)).rejects.toMatchObject({
+        code: 'connection_refused',
+        message: expect.stringContaining('Vorschau-Server'),
+      });
+      await expect(rejected.inspect()).rejects.toMatchObject({ code: 'preview_not_open' });
+      await expect(stalled.navigate('http://127.0.0.1:5173/', viewport)).rejects.toMatchObject({
+        code: 'navigation_timeout',
+        message: expect.stringContaining('browser_inspect'),
+      });
+      expect(stalled.isRunning).toBe(true);
+      await expect(stalled.inspect()).resolves.toBe('Testseite');
+    } finally {
+      await Promise.all([rejected.close(), stalled.close()]);
+    }
+  });
+
+  it('opens hash routes without waiting for a new document and confirms a full reload', async () => {
+    const session = sessionWith(fakeChrome({ navigation: 'hash' }), { navigationTimeoutMs: 30 });
+    const viewport = { width: 820, height: 1180 };
+    try {
+      await session.navigate('http://127.0.0.1:5173/', viewport);
+      await expect(
+        session.navigate('http://127.0.0.1:5173/#/projects', viewport)
+      ).resolves.toMatchObject({ url: 'http://127.0.0.1:5173/#/projects' });
+      await expect(session.act({ kind: 'reload' })).resolves.toBe('Seite neu geladen.');
+    } finally {
+      await session.close();
+    }
+  });
+
   it('inspects without a selector without issuing a querySelector', async () => {
     const fake = fakeChrome({ title: 'Ohne Selector' });
     const session = sessionWith(fake);
@@ -378,20 +447,53 @@ describe('browser preview helper', () => {
   });
 
   it('bounds actions and reports honest element errors', async () => {
-    const fake = fakeChrome();
+    const fake = fakeChrome({
+      evaluate: (expression) => {
+        if (expression.includes('button:has-text')) return { error: 'invalid_selector' };
+        if (expression.includes('#missing')) return { error: 'missing_target' };
+        return 'Testseite';
+      },
+    });
     const session = sessionWith(fake);
     await session.navigate('http://127.0.0.1:5173/', { width: 820, height: 1180 });
-    // The fake answers every evaluate with a page title, so a click target
-    // without coordinates must surface as an honest error.
-    await expect(session.act({ kind: 'click', selector: '#missing' })).rejects.toThrowError(
-      /Element/
-    );
+    await expect(session.act({ kind: 'click', selector: '#missing' })).rejects.toMatchObject({
+      code: 'target_not_found',
+    });
     await expect(session.act({ kind: 'press', key: 'F12' })).rejects.toThrowError(/Taste/);
     await expect(session.act({ kind: 'type', text: '' })).rejects.toThrowError(/Text/);
     await expect(
-      session.act({ kind: 'scroll', selector: 'javascript:alert(1)' })
-    ).rejects.toThrowError(/Selector/);
+      session.act({ kind: 'scroll', selector: 'button:has-text("Normal")' })
+    ).rejects.toMatchObject({ code: 'invalid_selector' });
     await session.close();
+  });
+
+  it('sends logical and physical game keys with their DOM key and code', async () => {
+    const fake = fakeChrome();
+    const session = sessionWith(fake);
+    try {
+      await session.navigate('http://127.0.0.1:5173/', { width: 820, height: 1180 });
+      for (const key of ['W', 'KeyZ', '0', 'Digit1', 'Space'])
+        await session.act({ kind: 'press', key });
+      expect(
+        fake.requests
+          .filter(
+            (request) =>
+              request.method === 'Input.dispatchKeyEvent' && request.params.type === 'keyDown'
+          )
+          .map(({ params }) => [params.key, params.code, params.text])
+      ).toEqual([
+        ['W', 'KeyW', 'W'],
+        ['z', 'KeyZ', 'z'],
+        ['0', 'Digit0', '0'],
+        ['1', 'Digit1', '1'],
+        [' ', 'Space', ' '],
+      ]);
+      await expect(session.act({ kind: 'press', key: 'Control+L' })).rejects.toMatchObject({
+        code: 'invalid_key',
+      });
+    } finally {
+      await session.close();
+    }
   });
 
   it('times out a stuck startup and cleans up the private profile on close', async () => {

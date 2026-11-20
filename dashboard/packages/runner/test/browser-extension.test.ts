@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import browserExtension from '../src/browser-extension.js';
-import { BrowserInputError, BrowserSession, sanitizeSelector } from '../src/browser.js';
+import {
+  BrowserInputError,
+  BrowserNavigationError,
+  BrowserSession,
+  sanitizeSelector,
+} from '../src/browser.js';
 
 type Tool = { execute(id: string, params: Record<string, unknown>): Promise<unknown> };
 afterEach(() => {
@@ -59,7 +64,7 @@ describe('browser extension session recovery', () => {
   it('keeps a preview after input/element errors and closes it after runtime failures', async () => {
     vi.stubEnv('B70_BROWSER_ROOT', '/browser');
     vi.spyOn(BrowserSession.prototype, 'isRunning', 'get').mockReturnValue(true);
-    vi.spyOn(BrowserSession.prototype, 'navigate').mockResolvedValue({
+    const navigate = vi.spyOn(BrowserSession.prototype, 'navigate').mockResolvedValue({
       url: 'http://127.0.0.1:5173/',
       title: 'Preview',
     });
@@ -80,10 +85,18 @@ describe('browser extension session recovery', () => {
     const call = (name: string, params: Record<string, unknown> = {}) =>
       tools.get(name)!.execute('test', params);
     await call('browser_open', { url: 'http://127.0.0.1:5173/' });
-    expect(await call('browser_inspect', { selector: 'button;alert(1)' })).toMatchObject({
+    expect(await call('browser_inspect', { selector: '' })).toMatchObject({
       isError: true,
     });
     await call('browser_action', { action: 'click', selector: '#missing' });
+    navigate.mockRejectedValueOnce(
+      new BrowserNavigationError('Kein Server erreichbar', 'connection_refused')
+    );
+    expect(await call('browser_open', { url: 'http://127.0.0.1:3001/' })).toMatchObject({
+      isError: true,
+      details: { code: 'connection_refused' },
+      content: [{ text: expect.stringContaining('connection_refused') }],
+    });
     expect(close).not.toHaveBeenCalled();
     expect(await call('browser_inspect')).toMatchObject({
       content: [{ text: expect.stringContaining('Preview remains open') }],
@@ -157,5 +170,7 @@ describe('browser extension session recovery', () => {
       isError: true,
     });
     expect(screenshot).toHaveBeenCalledTimes(4);
+    await call('browser_action', { action: 'click', ref: 'e1-2' });
+    expect(act).toHaveBeenLastCalledWith({ kind: 'click', ref: 'e1-2' }, undefined);
   });
 });

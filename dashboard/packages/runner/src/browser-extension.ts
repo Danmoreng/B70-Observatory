@@ -9,7 +9,14 @@
  * fake success or a fake image.
  */
 import { mkdir, writeFile } from 'node:fs/promises';
-import { BrowserError, BrowserInputError, BrowserSession, type BrowserEngine } from './browser.js';
+import {
+  BrowserError,
+  BrowserInputError,
+  BrowserNavigationError,
+  BrowserSession,
+  type BrowserAction,
+  type BrowserEngine,
+} from './browser.js';
 
 type ExtensionApi = {
   registerTool(tool: Record<string, unknown>): void;
@@ -24,8 +31,15 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function toolError(message: string): { isError: true; content: Array<Record<string, unknown>> } {
-  return { isError: true, content: [{ type: 'text', text: `Browser preview: ${message}` }] };
+function toolError(error: unknown, fallback: string) {
+  const code = error instanceof BrowserError ? error.code : 'browser_runtime';
+  return {
+    isError: true,
+    content: [
+      { type: 'text', text: `Browser preview [${code}]: ${errorMessage(error, fallback)}` },
+    ],
+    details: { code },
+  };
 }
 
 export default function browserExtension(
@@ -41,11 +55,10 @@ export default function browserExtension(
   // After a runtime failure the broken session is closed and the next tool call
   // transparently starts a fresh one; only a real session shutdown performs
   // the final cleanup.
-  let active: BrowserSession | undefined;
   let selected: BrowserEngine = 'chromium';
   const sessions = new Map<BrowserEngine, BrowserSession>();
   const session = (): BrowserSession => {
-    active = sessions.get(selected);
+    let active = sessions.get(selected);
     if (active === undefined || !active.isRunning) {
       if (active) void active.close();
       active = createSession(selected);
@@ -57,7 +70,6 @@ export default function browserExtension(
   // Session shutdown (abort, quit, replacement) must not leave a browser
   // process inside the scope.
   pi.on?.('session_shutdown', async () => {
-    active = undefined;
     await Promise.allSettled([...sessions.values()].map((current) => current.close()));
     sessions.clear();
   });
@@ -66,9 +78,9 @@ export default function browserExtension(
     try {
       return await operation();
     } catch (error) {
-      if (error instanceof BrowserInputError) throw error;
-      const current = active;
-      active = undefined;
+      if (error instanceof BrowserInputError || error instanceof BrowserNavigationError)
+        throw error;
+      const current = sessions.get(selected);
       sessions.delete(selected);
       if (current !== undefined) await current.close().catch(() => undefined);
       throw error;
@@ -172,7 +184,7 @@ export default function browserExtension(
           signal
         );
       } catch (error) {
-        return toolError(errorMessage(error, 'Die Vorschau konnte nicht geöffnet werden.'));
+        return toolError(error, 'Die Vorschau konnte nicht geöffnet werden.');
       }
     },
   });
@@ -198,7 +210,7 @@ export default function browserExtension(
         const size = await stopOnError(() => session().resize(params, signal));
         return await withPreviewImage('', { viewport: size }, signal);
       } catch (error) {
-        return toolError(errorMessage(error, 'Die Vorschau-Größe konnte nicht geändert werden.'));
+        return toolError(error, 'Die Vorschau-Größe konnte nicht geändert werden.');
       }
     },
   });
@@ -207,7 +219,7 @@ export default function browserExtension(
     name: 'browser_inspect',
     label: 'Vorschau prüfen',
     description:
-      'Liefert einen begrenzten DOM-/Text-Überblick der aktuellen Vorschau und automatisch einen Screenshot an Modell und Transkript: URL, Titel, Bedienelemente, optional ein ausgewähltes Element und Seiten-Text (gekürzt).',
+      'Zeigt Bedienelemente, Seitentext und Screenshot der aktuellen Vorschau. Übernimm ref eines Bedienelements direkt in browser_action. Die Referenzen gelten bis zur nächsten Inspektion oder Navigation.',
     parameters: {
       '~kind': 'Object',
       type: 'object',
@@ -215,8 +227,7 @@ export default function browserExtension(
         selector: {
           '~kind': 'String',
           type: 'string',
-          description:
-            'Optionaler CSS-Selector (ohne JavaScript-Injection) für ein bestimmtes Element.',
+          description: 'Optionaler nativer CSS-Selektor für ein bestimmtes Element.',
         },
       },
       additionalProperties: false,
@@ -227,7 +238,7 @@ export default function browserExtension(
         const report = await stopOnError(() => session().inspect(params.selector, signal));
         return await withPreviewImage(report, {}, signal);
       } catch (error) {
-        return toolError(errorMessage(error, 'Die Vorschau konnte nicht geprüft werden.'));
+        return toolError(error, 'Die Vorschau konnte nicht geprüft werden.');
       }
     },
   });
@@ -236,7 +247,7 @@ export default function browserExtension(
     name: 'browser_action',
     label: 'Vorschau bedienen',
     description:
-      'Führt genau eine Aktion auf der aktuellen Vorschau aus und liefert danach automatisch einen Screenshot an Modell und Transkript: click (Klick auf Selector), type (Text in fokussierbares Feld), press (erlaubte Taste), scroll (Delta in px oder Selector) oder reload.',
+      'Führt eine Aktion aus und liefert einen Screenshot. Für click, type oder Scrollen zu einem Element verwende ref aus browser_inspect oder einen nativen CSS-Selektor. type kann auch das fokussierte Eingabefeld verwenden. press drückt eine einzelne Taste. scroll ohne Ziel verwendet delta in px. reload lädt die Seite neu.',
     parameters: {
       '~kind': 'Object',
       type: 'object',
@@ -249,7 +260,12 @@ export default function browserExtension(
         selector: {
           '~kind': 'String',
           type: 'string',
-          description: 'CSS-Selector für click/type/scroll.',
+          description: 'Nativer CSS-Selektor als Alternative zu ref, z. B. a[href="#/projects"].',
+        },
+        ref: {
+          type: 'string',
+          maxLength: 32,
+          description: 'Elementreferenz aus der letzten Ausgabe von browser_inspect.',
         },
         text: {
           '~kind': 'String',
@@ -259,21 +275,10 @@ export default function browserExtension(
         key: {
           '~kind': 'String',
           type: 'string',
-          enum: [
-            'Enter',
-            'Tab',
-            'Escape',
-            'Backspace',
-            'Delete',
-            ' ',
-            'Home',
-            'End',
-            'ArrowUp',
-            'ArrowDown',
-            'ArrowLeft',
-            'ArrowRight',
-          ],
-          description: 'Taste für press.',
+          minLength: 1,
+          maxLength: 16,
+          description:
+            'Einzelne Taste für press, z. B. W, 0, KeyZ, Digit0, Space, Enter oder ArrowUp.',
         },
         delta: {
           '~kind': 'Number',
@@ -289,31 +294,15 @@ export default function browserExtension(
     executionMode: 'sequential',
     async execute(
       _toolCallId: string,
-      params: {
-        action: 'click' | 'type' | 'press' | 'scroll' | 'reload';
-        selector?: string;
-        text?: string;
-        key?: string;
-        delta?: number;
-      },
+      params: Omit<BrowserAction, 'kind'> & { action: BrowserAction['kind'] },
       signal?: AbortSignal
     ) {
       try {
-        await stopOnError(() =>
-          session().act(
-            {
-              kind: params.action,
-              ...(params.selector === undefined ? {} : { selector: params.selector }),
-              ...(params.text === undefined ? {} : { text: params.text }),
-              ...(params.key === undefined ? {} : { key: params.key }),
-              ...(params.delta === undefined ? {} : { delta: params.delta }),
-            },
-            signal
-          )
-        );
-        return await withPreviewImage('', { action: params.action }, signal);
+        const { action, ...args } = params;
+        await stopOnError(() => session().act({ kind: action, ...args }, signal));
+        return await withPreviewImage('', { action }, signal);
       } catch (error) {
-        return toolError(errorMessage(error, 'Die Aktion konnte nicht ausgeführt werden.'));
+        return toolError(error, 'Die Aktion konnte nicht ausgeführt werden.');
       }
     },
   });
@@ -387,10 +376,8 @@ export default function browserExtension(
         };
       } catch (error) {
         return toolError(
-          errorMessage(
-            error,
-            'Der Screenshot konnte nicht aufgenommen werden. Prüfe, ob eine Vorschau geöffnet ist.'
-          )
+          error,
+          'Der Screenshot konnte nicht aufgenommen werden. Prüfe, ob eine Vorschau geöffnet ist.'
         );
       }
     },

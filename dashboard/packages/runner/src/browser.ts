@@ -44,10 +44,14 @@ export const DEFAULT_BROWSER_LIMITS: Readonly<BrowserLimits> = Object.freeze({
 export interface BrowserAction {
   kind: 'click' | 'type' | 'press' | 'scroll' | 'reload';
   selector?: string;
+  ref?: string;
   text?: string;
   key?: string;
   delta?: number;
 }
+
+type BrowserTarget = Pick<BrowserAction, 'selector' | 'ref'>;
+let nextInspection = 0;
 
 /** Minimal structural interface so tests can inject a fake process. */
 export interface BrowserProcess {
@@ -66,7 +70,11 @@ export interface BrowserProcess {
 export interface BrowserProtocol {
   send(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<unknown>;
   onEvent(type: string, handler: (params: Record<string, unknown>) => void): void;
-  waitEvent(type: string, timeoutMs: number): Promise<unknown>;
+  waitEvent(
+    type: string,
+    timeoutMs: number,
+    matches?: (params: Record<string, unknown>) => boolean
+  ): Promise<unknown>;
   resetEvents(): void;
   close(): void;
 }
@@ -104,15 +112,46 @@ const KEY_CODES: Record<string, { key: string; code: string; keyCode: number }> 
   ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
 };
 
+function browserKey(input: string | undefined) {
+  const namedKey = input === 'Space' ? ' ' : input;
+  if (namedKey && Object.hasOwn(KEY_CODES, namedKey)) return KEY_CODES[namedKey]!;
+  if (input) {
+    const letter = /^(?:Key([A-Z])|([A-Za-z]))$/.exec(input);
+    if (letter) {
+      const key = letter[2] ?? letter[1]!.toLowerCase();
+      const capital = key.toUpperCase();
+      return { key, code: `Key${capital}`, keyCode: capital.charCodeAt(0) };
+    }
+    const digit = /^(?:Digit)?([0-9])$/.exec(input)?.[1];
+    if (digit) return { key: digit, code: `Digit${digit}`, keyCode: digit.charCodeAt(0) };
+  }
+  throw new BrowserInputError(
+    'Ungültige Taste. Verwende einen Buchstaben, eine Ziffer, KeyW, Digit0, Space, eine Pfeiltaste oder eine Taste wie Enter.',
+    'invalid_key'
+  );
+}
+
 export class BrowserError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code = 'browser_runtime'
+  ) {
     super(message);
     this.name = 'BrowserError';
   }
 }
 
 /** Invalid tool input or missing page elements do not invalidate a live browser. */
-export class BrowserInputError extends BrowserError {}
+export class BrowserInputError extends BrowserError {
+  constructor(message: string, code = 'invalid_input') {
+    super(message, code);
+  }
+}
+
+/** The page/server failed or stalled, but the browser connection is usable. */
+export class BrowserNavigationError extends BrowserError {}
+
+class BrowserEventTimeout extends BrowserError {}
 
 /**
  * Only clean http URLs on the isolated loopback are accepted. No credentials,
@@ -216,6 +255,10 @@ interface CdpPending {
 }
 
 type CdpEventHandler = (params: Record<string, unknown>) => void;
+type CdpEventWaiter = {
+  receive: CdpEventHandler;
+  reject: (error: Error) => void;
+};
 
 /**
  * One CDP session over Chrome's `--remote-debugging-pipe`: commands are
@@ -229,12 +272,11 @@ class CdpConnection {
   private buffer = Buffer.alloc(0);
   private nextId = 0;
   private readonly pending = new Map<number, CdpPending>();
-  private readonly eventWaiters = new Map<string, Array<() => void>>();
+  private readonly eventWaiters = new Map<string, Set<CdpEventWaiter>>();
   private readonly eventHandlers = new Map<string, Array<CdpEventHandler>>();
-  private readonly eventSeen = new Set<string>();
-  private readonly events: unknown[] = [];
+  private readonly events: Array<{ type: string; params: Record<string, unknown> }> = [];
   private closed = false;
-  private transportFailed = false;
+  private transportError?: Error;
 
   constructor(
     private readonly processHandle: BrowserProcess,
@@ -243,7 +285,7 @@ class CdpConnection {
     // `on` (not `once`): every data chunk of the pipe carries bytes, and a
     // large frame regularly spans several chunks.
     this.processHandle.pipeOut.on('data', (chunk: Buffer) => {
-      if (this.closed || this.transportFailed) return;
+      if (this.closed || this.transportError) return;
       this.buffer = Buffer.concat([this.buffer, chunk]);
       if (this.buffer.length > CdpConnection.MAX_FRAME_BYTES + 8 * 1024) {
         this.fail(new BrowserError('Die CDP-Antwort überschreitet das Framing-Limit.'));
@@ -270,6 +312,7 @@ class CdpConnection {
   send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<unknown> {
     if (this.closed)
       return Promise.reject(new BrowserError('Der Browser ist bereits geschlossen.'));
+    if (this.transportError) return Promise.reject(this.transportError);
     const id = ++this.nextId;
     const frame = JSON.stringify({
       id,
@@ -305,24 +348,44 @@ class CdpConnection {
     this.eventHandlers.set(type, handlers);
   }
 
-  waitEvent(type: string, timeoutMs: number): Promise<unknown> {
-    if (this.eventSeen.has(type)) {
-      this.eventSeen.delete(type);
-      const event = this.events.at(-1);
-      return Promise.resolve(isObject(event) ? (event as { params: unknown }).params : undefined);
-    }
-    return withTimeout(
-      new Promise<unknown>((resolve) => {
-        const waiters = this.eventWaiters.get(type) ?? [];
-        waiters.push(() => {
-          const event = this.events.at(-1);
-          resolve(isObject(event) ? (event as { params: unknown }).params : undefined);
-        });
-        this.eventWaiters.set(type, waiters);
-      }),
-      timeoutMs,
-      `Warten auf ${type}`
-    );
+  waitEvent(
+    type: string,
+    timeoutMs: number,
+    matches: (params: Record<string, unknown>) => boolean = () => true
+  ) {
+    if (this.closed) return Promise.reject(new BrowserError('Der Browser wurde geschlossen.'));
+    if (this.transportError) return Promise.reject(this.transportError);
+    const seen = this.events.find((event) => event.type === type && matches(event.params));
+    if (seen) return Promise.resolve(seen.params);
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      const waiters = this.eventWaiters.get(type) ?? new Set<CdpEventWaiter>();
+      const clear = () => {
+        clearTimeout(timer);
+        waiters.delete(waiter);
+        if (waiters.size === 0) this.eventWaiters.delete(type);
+      };
+      const waiter: CdpEventWaiter = {
+        receive: (params) => {
+          if (!matches(params)) return;
+          clear();
+          resolve(params);
+        },
+        reject: (error) => {
+          clear();
+          reject(error);
+        },
+      };
+      const timer = setTimeout(
+        () =>
+          waiter.reject(
+            new BrowserEventTimeout(`Warten auf ${type} nach ${timeoutMs} ms abgelaufen.`)
+          ),
+        timeoutMs
+      );
+      timer.unref?.();
+      waiters.add(waiter);
+      this.eventWaiters.set(type, waiters);
+    });
   }
 
   /**
@@ -331,28 +394,25 @@ class CdpConnection {
    */
   resetEvents(): void {
     this.events.length = 0;
-    this.eventSeen.clear();
   }
 
   close(): void {
     if (this.closed) return;
+    this.fail(new BrowserError('Der Browser wurde geschlossen.'));
     this.closed = true;
-    for (const [id, entry] of this.pending) {
-      clearTimeout(entry.timer);
-      entry.reject(new BrowserError('Der Browser wurde geschlossen.'));
-      this.pending.delete(id);
-    }
   }
 
   /** Rejects every pending command once the transport itself died. */
   fail(error: Error): void {
-    if (this.closed || this.transportFailed) return;
-    this.transportFailed = true;
+    if (this.closed || this.transportError) return;
+    this.transportError = error;
     for (const [id, entry] of this.pending) {
       clearTimeout(entry.timer);
       entry.reject(error);
       this.pending.delete(id);
     }
+    for (const waiters of this.eventWaiters.values())
+      for (const waiter of waiters) waiter.reject(error);
   }
 
   private drain(): void {
@@ -377,15 +437,12 @@ class CdpConnection {
     // first so a frame that contains both is never misrouted into a pending
     // command (which would swallow the real response).
     if (typeof value.method === 'string') {
-      this.events.push(value);
-      if (this.events.length > 512) this.events.shift();
-      this.eventSeen.add(value.method);
-      const waiters = this.eventWaiters.get(value.method);
-      if (waiters !== undefined) {
-        this.eventWaiters.set(value.method, []);
-        for (const waiter of waiters) waiter();
-      }
       const params = isObject(value.params) ? value.params : {};
+      if (value.method === 'Page.lifecycleEvent') {
+        this.events.push({ type: value.method, params });
+        if (this.events.length > 512) this.events.shift();
+      }
+      for (const waiter of this.eventWaiters.get(value.method) ?? []) waiter.receive(params);
       const handlers = this.eventHandlers.get(value.method);
       if (handlers !== undefined) {
         for (const handler of [...handlers]) {
@@ -420,6 +477,36 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function navigationError(message: string, url: string) {
+  const host = hostOf(url);
+  if (/(?:ERR|NS_ERROR)_CONNECTION_REFUSED/.test(message))
+    return new BrowserNavigationError(
+      `Kein Server erreichbar unter ${host}. Prüfe, ob der Vorschau-Server läuft und auf diesem Port lauscht.`,
+      'connection_refused'
+    );
+  if (/(?:ERR|NS_ERROR)_(?:TIMED_OUT|NET_TIMEOUT)/.test(message))
+    return new BrowserNavigationError(
+      `Der Server unter ${host} antwortet nicht rechtzeitig. Prüfe die Server-Logs und den Port.`,
+      'connection_timeout'
+    );
+  if (/ERR_BLOCKED_BY_CLIENT|NS_ERROR_BLOCKED/.test(message))
+    return new BrowserNavigationError(
+      `Die Anfrage oder eine Weiterleitung unter ${host} wurde von der Vorschau blockiert. Prüfe die lokale Vorschau-URL.`,
+      'navigation_blocked'
+    );
+  return new BrowserNavigationError(
+    `Navigation unter ${host} fehlgeschlagen: ${message.slice(0, 250)}.`,
+    'navigation_failed'
+  );
+}
+
+function noPreview() {
+  return new BrowserInputError(
+    'Keine Vorschau geöffnet. Starte den Vorschau-Server und öffne seine URL mit browser_open.',
+    'preview_not_open'
+  );
+}
+
 export class BrowserSession {
   private readonly limits: BrowserLimits;
   private readonly executable: string;
@@ -434,6 +521,8 @@ export class BrowserSession {
   private targetId: string | undefined;
   private sessionId: string | undefined;
   private currentPageUrl: string | undefined;
+  private readonly controlStore = `b70-browser-controls-${randomUUID()}`;
+  private inspection?: number;
   private closed = false;
   /** Recorded request-gate failures, surfaced on the next operation. */
   private fetchErrors: string[] = [];
@@ -580,6 +669,8 @@ export class BrowserSession {
         this.send('Runtime.enable'),
         this.send('DOM.enable'),
       ]);
+      if (this.engine === 'chromium')
+        await this.send('Page.setLifecycleEventsEnabled', { enabled: true });
       // Network.setBlockedURLs stays as a second layer for the inference
       // relay port, but the enforcing point for EVERY request (main frame,
       // redirects, subresources) is the Fetch whitelist below. Both are
@@ -685,8 +776,7 @@ export class BrowserSession {
 
   /** Resize the current page without navigation, preserving its JS/game state. */
   async resize(viewport: BrowserViewport, signal?: AbortSignal): Promise<BrowserViewport> {
-    if (this.cdp === undefined)
-      throw new BrowserInputError('Erst eine Vorschau öffnen (browser_open).');
+    if (!this.currentPageUrl) throw noPreview();
     if (
       !Number.isInteger(viewport.width) ||
       viewport.width < 320 ||
@@ -750,49 +840,87 @@ export class BrowserSession {
     await this.setViewport(viewport);
     this.ensureFetchHealthy();
     const operation = (async () => {
-      // Only events after this point belong to the requested navigation.
+      this.currentPageUrl = undefined;
+      this.inspection = undefined;
       this.cdp!.resetEvents();
-      const loaded = this.cdp!.waitEvent(
-        'Page.loadEventFired',
-        this.limits.navigationTimeoutMs
-      ).then(
-        () => true,
-        () => false
-      );
-      const navigation = await this.send('Page.navigate', { url: normalized });
+      const navigation = await this.sendNavigation('Page.navigate', normalized, {
+        url: normalized,
+      });
       const result = isObject(navigation) ? navigation : {};
-      if (result.errorText !== undefined) {
-        throw new BrowserError(`Navigation fehlgeschlagen: ${String(result.errorText)}`);
-      }
-      if (!(await loaded)) {
-        throw new BrowserError(
-          `Die Vorschau unter ${hostOf(normalized)} hat das Laden nicht abgeschlossen.`
-        );
-      }
-      const title = await this.evaluate('document.title').catch(() => '');
+      if (result.errorText !== undefined)
+        throw navigationError(String(result.errorText), normalized);
+      if (result.isDownload === true)
+        throw navigationError('Die URL liefert einen Download statt einer Webseite', normalized);
       this.currentPageUrl = normalized;
+      // Chrome omits loaderId for same-document navigation, such as a hash route.
+      // Firefox's navigate command already waits for an interactive document.
+      if (this.engine === 'chromium' && typeof result.loaderId === 'string')
+        await this.waitForDocument(result.frameId, (loader) => loader === result.loaderId);
+      const title = await this.evaluate('document.title');
       return { url: normalized, title: typeof title === 'string' ? title.slice(0, 200) : '' };
     })();
     return await abortable(operation, signal, 'Vorschau öffnen');
   }
 
+  private async sendNavigation(method: string, url: string, params?: Record<string, unknown>) {
+    try {
+      return await this.send(method, params);
+    } catch (error) {
+      if (error instanceof BrowserError) {
+        if (error.code === 'navigation_timeout') {
+          this.currentPageUrl = url;
+          throw this.navigationTimeout(url);
+        }
+        if (/(?:NS_ERROR_|net::ERR_)/.test(error.message))
+          throw navigationError(error.message, url);
+      }
+      throw error;
+    }
+  }
+
+  private navigationTimeout(url: string) {
+    return new BrowserNavigationError(
+      `Die Vorschau unter ${hostOf(url)} hat innerhalb von ${this.limits.navigationTimeoutMs} ms keinen interaktiven Seitenzustand bestätigt. Prüfe den aktuellen Seitenzustand mit browser_inspect und bei Bedarf die Server-Logs.`,
+      'navigation_timeout'
+    );
+  }
+
+  private async waitForDocument(frameId: unknown, matchesLoader: (loader: string) => boolean) {
+    try {
+      await this.cdp!.waitEvent(
+        'Page.lifecycleEvent',
+        this.limits.navigationTimeoutMs,
+        (event) =>
+          event.name === 'DOMContentLoaded' &&
+          event.frameId === frameId &&
+          typeof event.loaderId === 'string' &&
+          matchesLoader(event.loaderId)
+      );
+    } catch (error) {
+      if (!(error instanceof BrowserEventTimeout)) throw error;
+      throw this.navigationTimeout(this.currentPageUrl!);
+    }
+  }
+
   /** Bounded DOM/text/controls summary of the current page. */
   async inspect(selector?: string, signal?: AbortSignal): Promise<string> {
-    if (this.cdp === undefined) throw new BrowserError('Erst eine Vorschau öffnen (browser_open).');
+    if (!this.currentPageUrl) throw noPreview();
     this.ensureFetchHealthy();
     if (this.desktop) await this.send('Page.bringToFront');
-    const clean = selector === undefined ? undefined : sanitizeSelector(selector);
-    const expression = buildInspectExpression(clean);
+    const inspection = ++nextInspection;
+    const expression = buildInspectExpression(selector, this.controlStore, inspection);
     const raw = await abortable(this.evaluate(expression), signal, 'Vorschau prüfen');
+    if (isObject(raw) && raw.error === 'invalid_selector') throw invalidSelector();
     if (typeof raw !== 'string') {
       throw new BrowserError('Die Seiteninspektion lieferte kein Ergebnis.');
     }
+    this.inspection = inspection;
     return raw.length > 12_000 ? `${raw.slice(0, 12_000)}\n[ausgewertet, gekürzt]` : raw;
   }
 
   /** One bounded user action on the current page. */
   async act(action: BrowserAction, signal?: AbortSignal): Promise<string> {
-    if (this.cdp === undefined) throw new BrowserError('Erst eine Vorschau öffnen (browser_open).');
+    if (!this.currentPageUrl) throw noPreview();
     this.ensureFetchHealthy();
     this.desktop?.invalidateSnapshot();
     if (this.desktop) await this.send('Page.bringToFront');
@@ -801,33 +929,39 @@ export class BrowserSession {
 
   private async performAction(action: BrowserAction): Promise<string> {
     const cdp = this.cdp;
-    if (cdp === undefined) throw new BrowserError('Erst eine Vorschau öffnen (browser_open).');
+    if (!cdp || !this.currentPageUrl) throw noPreview();
     switch (action.kind) {
       case 'reload': {
+        this.inspection = undefined;
+        const previousTree =
+          this.engine === 'chromium' ? await this.send('Page.getFrameTree') : undefined;
+        const tree = isObject(previousTree) ? previousTree.frameTree : undefined;
+        const frame = isObject(tree) && isObject(tree.frame) ? tree.frame : undefined;
         cdp.resetEvents();
-        // Attach both handlers immediately: the load event may time out
-        // before the reload command itself settles, and a late-attached
-        // handler would surface as an unhandled rejection.
-        const confirmed = cdp
-          .waitEvent('Page.loadEventFired', this.limits.navigationTimeoutMs)
-          .then(
-            () => true,
-            () => false
-          );
-        const navigationStarted = this.send('Page.reload').then(
-          () => true,
-          () => false
-        );
-        const [started, ok] = await Promise.all([navigationStarted, confirmed]);
-        if (!started || !ok) {
-          throw new BrowserError(
-            `Neuladen unter ${hostOf(this.currentPageUrl ?? 'der Vorschau')} hat das Ladeereignis nicht bestätigt.`
-          );
+        await this.sendNavigation('Page.reload', this.currentPageUrl);
+        if (this.engine === 'chromium') {
+          if (!frame || typeof frame.id !== 'string')
+            throw new BrowserError(
+              'Der Browser konnte den Hauptframe der Vorschau nicht bestimmen.'
+            );
+          await this.waitForDocument(frame.id, (loader) => loader !== frame.loaderId);
         }
         return 'Seite neu geladen.';
       }
       case 'click': {
-        const point = await this.elementCenter(action.selector);
+        const point = await this.withElement(
+          action,
+          `(element) => {
+          element.scrollIntoView({ block: 'center' });
+          const { x, y, width, height } = element.getBoundingClientRect();
+          return width > 0 && height > 0 ? { x: x + width / 2, y: y + height / 2 } : null;
+        }`
+        );
+        if (!isObject(point) || typeof point.x !== 'number' || typeof point.y !== 'number')
+          throw new BrowserInputError(
+            'Das Element ist nicht sichtbar. Prüfe den aktuellen Seitenzustand mit browser_inspect.',
+            'target_not_visible'
+          );
         await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
         await this.send('Input.dispatchMouseEvent', {
           type: 'mousePressed',
@@ -847,26 +981,42 @@ export class BrowserSession {
       }
       case 'type': {
         const text = action.text === undefined ? '' : action.text.slice(0, 4096);
-        if (text.length === 0) throw new BrowserInputError('Kein Text zum Einfügen angegeben.');
-        await this.focusElement(action.selector);
+        if (text.length === 0)
+          throw new BrowserInputError('Gib den Text zum Einfügen in text an.', 'invalid_input');
+        const focused =
+          action.selector !== undefined || action.ref !== undefined
+            ? await this.withElement(
+                action,
+                `(element) => {
+                element.focus();
+                return document.activeElement === element;
+              }`
+              )
+            : await this.evaluate(`(() => {
+                const element = document.activeElement;
+                return element?.matches('input:not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled])') || element?.isContentEditable;
+              })()`);
+        if (focused !== true)
+          throw new BrowserInputError(
+            'Kein Eingabefeld fokussiert. Verwende ref aus browser_inspect oder den CSS-Selektor eines Eingabefelds.',
+            'target_not_focused'
+          );
         await this.send('Input.insertText', { text });
         return `${text.length} Zeichen eingegeben.`;
       }
       case 'press': {
-        const code = action.key === undefined ? undefined : KEY_CODES[action.key];
-        if (code === undefined) {
-          throw new BrowserInputError(
-            `Taste nicht erlaubt. Erlaubt: ${Object.keys(KEY_CODES)
-              .map((key) => key.trim() || 'Leertaste')
-              .join(', ')}.`
-          );
-        }
-        await this.send('Input.dispatchKeyEvent', {
-          type: 'keyDown',
+        const code = browserKey(action.key);
+        const event = {
           key: code.key,
           code: code.code,
           windowsVirtualKeyCode: code.keyCode,
           nativeVirtualKeyCode: code.keyCode,
+        };
+        const text = this.engine === 'chromium' && code.key.length === 1 ? code.key : undefined;
+        await this.send('Input.dispatchKeyEvent', {
+          ...event,
+          type: 'keyDown',
+          ...(text === undefined ? {} : { text, unmodifiedText: text }),
         });
         if (code.key === 'Enter' && this.engine === 'chromium')
           await this.send('Input.dispatchKeyEvent', {
@@ -877,25 +1027,16 @@ export class BrowserSession {
             code: 'Enter',
             windowsVirtualKeyCode: 13,
           });
-        await this.send('Input.dispatchKeyEvent', {
-          type: 'keyUp',
-          key: code.key,
-          code: code.code,
-          windowsVirtualKeyCode: code.keyCode,
-          nativeVirtualKeyCode: code.keyCode,
-        });
-        return `Taste ${action.key === ' ' ? 'Leertaste' : action.key} gedrückt.`;
+        await this.send('Input.dispatchKeyEvent', { ...event, type: 'keyUp' });
+        return `Taste ${code.key === ' ' ? 'Leertaste' : action.key} gedrückt.`;
       }
       case 'scroll': {
-        if (action.selector !== undefined) {
-          const selector = sanitizeSelector(action.selector);
-          const found = await this.evaluate(
-            `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return 'missing'; el.scrollIntoView({ block: 'center' }); return 'ok'; })()`
+        if (action.selector !== undefined || action.ref !== undefined) {
+          await this.withElement(
+            action,
+            `(element) => element.scrollIntoView({ block: 'center' })`
           );
-          if (found !== 'ok') {
-            throw new BrowserInputError(`Element für Scrollen nicht gefunden: ${selector}`);
-          }
-          return 'Element in Ansicht gescrolled.';
+          return 'Element ins Sichtfeld gescrollt.';
         }
         const delta = clampInt(action.delta ?? 800, -20_000, 20_000, 800);
         await this.evaluate(`window.scrollBy(0, ${delta})`);
@@ -921,7 +1062,7 @@ export class BrowserSession {
     byteLength: number;
     clipped: boolean;
   }> {
-    if (this.cdp === undefined) throw new BrowserError('Erst eine Vorschau öffnen (browser_open).');
+    if (!this.currentPageUrl) throw noPreview();
     this.ensureFetchHealthy();
     if (this.desktop) await this.send('Page.bringToFront');
     return await abortable(this.performScreenshot(fullPage), signal, 'Screenshot');
@@ -1037,42 +1178,32 @@ export class BrowserSession {
     return value;
   }
 
-  private async elementCenter(selector?: string): Promise<{ x: number; y: number }> {
-    const clean = sanitizeSelector(selector);
-    const value = await this.evaluate(
-      `(() => {
-        const el = document.querySelector(${JSON.stringify(clean)});
-        if (!el) return null;
-        // The target must be in the viewport before CDP mouse events reach
-        // its coordinates.
-        el.scrollIntoView({ block: 'center' });
-        const rect = el.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return null;
-        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-      })()`
-    );
-    if (value === null || value === undefined || !isObject(value)) {
-      throw new BrowserInputError(`Element nicht gefunden: ${clean}`);
+  private async withElement({ selector, ref }: BrowserTarget, operation: string) {
+    let lookup: string;
+    if (ref !== undefined) {
+      if (selector !== undefined) throw new BrowserInputError('Gib entweder ref oder selector an.');
+      const match = /^e([1-9][0-9]*)-([1-9][0-9]{0,2})$/.exec(ref);
+      if (!match || this.inspection !== Number(match[1])) throw staleTarget();
+      lookup = `globalThis[${JSON.stringify(this.controlStore)}]?.[${Number(match[2]) - 1}]`;
+    } else {
+      lookup = selectorExpression(selector);
     }
-    if (typeof value.x !== 'number' || typeof value.y !== 'number') {
-      throw new BrowserInputError(`Element liefert keine Position: ${clean}`);
+    const result = await this.evaluate(`(() => {
+      const element = ${lookup};
+      if (element === 'invalid_selector') return { error: 'invalid_selector' };
+      if (!element?.isConnected) return { error: 'missing_target' };
+      return { value: (${operation})(element) };
+    })()`);
+    if (!isObject(result)) throw new BrowserError('Die Elementprüfung lieferte keine Antwort.');
+    if (result.error === 'invalid_selector') throw invalidSelector();
+    if (result.error === 'missing_target') {
+      if (ref !== undefined) throw staleTarget();
+      throw new BrowserInputError(
+        `Element nicht gefunden: ${selector}. Prüfe die aktuellen Bedienelemente mit browser_inspect.`,
+        'target_not_found'
+      );
     }
-    return { x: value.x, y: value.y };
-  }
-
-  private async focusElement(selector?: string): Promise<void> {
-    const clean = sanitizeSelector(selector);
-    const value = await this.evaluate(
-      `(() => {
-        const el = document.querySelector(${JSON.stringify(clean)});
-        if (!el) return false;
-        el.focus();
-        return document.activeElement === el;
-      })()`
-    );
-    if (value !== true) {
-      throw new BrowserInputError(`Feld nicht fokussierbar: ${clean}`);
-    }
+    return result.value;
   }
 }
 
@@ -1091,43 +1222,73 @@ function hostOf(url: string): string {
 
 /** CSS is passed as a JSON string to querySelector, never interpolated as code. */
 export function sanitizeSelector(selector: string | undefined): string {
-  const value = (selector ?? '').trim();
-  if (value.length === 0) throw new BrowserInputError('Kein Selector angegeben.');
-  if (value.length > 256)
-    throw new BrowserInputError('Der Selector ist zu lang (maximal 256 Zeichen).');
-  if (
-    value.includes('javascript:') ||
-    !/^[A-Za-z0-9_\u00c0-\u024f#.*:\-[\]=,'"\s()+>~|^$]+$/.test(value)
-  ) {
-    throw new BrowserInputError('Der Selector enthält nicht erlaubte Zeichen.');
-  }
-  return value;
+  if (!selector?.trim())
+    throw new BrowserInputError('Gib ref aus browser_inspect oder einen CSS-Selektor an.');
+  if (selector.length > 256)
+    throw new BrowserInputError('Der CSS-Selektor ist zu lang (maximal 256 Zeichen).');
+  return selector;
 }
 
-function buildInspectExpression(selector: string | undefined): string {
-  // Without a selector no querySelector is issued at all: an empty
-  // selector is a page-level SyntaxError, not a valid "no target" state.
-  const targetExpression =
-    selector === undefined ? 'null' : `document.querySelector(${JSON.stringify(selector)})`;
+function invalidSelector() {
+  return new BrowserInputError(
+    'Ungültiger CSS-Selektor. Verwende natives CSS oder rufe browser_inspect auf und nutze die zurückgegebene ref für ein Textziel.',
+    'invalid_selector'
+  );
+}
+
+function staleTarget() {
+  return new BrowserInputError(
+    'Das Ziel stammt aus einer früheren Ansicht oder ist nicht mehr auf der Seite. Rufe browser_inspect erneut auf und verwende die aktuelle ref.',
+    'stale_target'
+  );
+}
+
+function selectorExpression(selector: string | undefined) {
   return `(() => {
-    const pick = (el) => ({
-      tag: el.tagName.toLowerCase(),
-      id: el.id || undefined,
-      name: el.getAttribute('name') || undefined,
-      type: el.getAttribute('type') || undefined,
-      label: ((el.getAttribute('aria-label')) || (el.textContent) || '').trim().replace(/\\s+/g, ' ').slice(0, 80)
-    });
-    const controls = Array.from(document.querySelectorAll('button, a[href], input, select, textarea')).slice(0, 100).map(pick);
+    try {
+      return document.querySelector(${JSON.stringify(sanitizeSelector(selector))});
+    } catch (error) {
+      if (error?.name === 'SyntaxError') return 'invalid_selector';
+      throw error;
+    }
+  })()`;
+}
+
+function buildInspectExpression(selector: string | undefined, store: string, inspection: number) {
+  const targetExpression = selector === undefined ? 'null' : selectorExpression(selector);
+  return `(() => {
     const target = ${targetExpression};
+    if (target === 'invalid_selector') return { error: 'invalid_selector' };
+    const nodes = [];
+    const controls = [];
+    let budget = 7200;
+    for (const el of document.querySelectorAll('button, a[href], input:not([type=hidden]), select, textarea, [contenteditable=true], [role=button], [role=link]')) {
+      if (el.getClientRects().length === 0) continue;
+      const control = {
+        ref: 'e${inspection}-' + (nodes.length + 1),
+        tag: el.tagName.toLowerCase(),
+        id: el.id.slice(0, 80) || undefined,
+        name: el.getAttribute('name')?.slice(0, 80) || undefined,
+        type: el.getAttribute('type')?.slice(0, 40) || undefined,
+        label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 80)
+      };
+      budget -= JSON.stringify(control).length + 1;
+      if (budget < 0 || nodes.length >= 100) break;
+      nodes.push(el);
+      controls.push(control);
+    }
+    globalThis[${JSON.stringify(store)}] = nodes;
     const rect = target ? target.getBoundingClientRect() : null;
-    return JSON.stringify({
-      url: location.href,
-      title: document.title,
+    const report = {
+      url: location.href.slice(0, 1000),
+      title: document.title.slice(0, 200),
       controls,
       target: target
         ? { tag: target.tagName.toLowerCase(), text: (target.innerText || '').slice(0, 400), rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } }
         : null,
-      body: (document.body ? document.body.innerText : '').replace(/\\n{3,}/g, '\\n\\n').slice(0, 6000)
-    });
+      body: (document.body ? document.body.innerText : '').replace(/\\n{3,}/g, '\\n\\n').slice(0, 3000)
+    };
+    const serialized = JSON.stringify(report);
+    return serialized.length <= 12000 ? serialized : JSON.stringify({ ...report, body: report.body.slice(0, 250) });
   })()`;
 }

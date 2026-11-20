@@ -45,7 +45,8 @@ export class FirefoxProtocol implements BrowserProtocol {
   private readonly seen = new Set<string>();
   constructor(
     private readonly socket: WebSocket,
-    private readonly timeout: number
+    private readonly timeout: number,
+    private readonly navigationTimeout = timeout
   ) {
     socket.addEventListener('message', (event) => {
       const raw = String(event.data);
@@ -78,14 +79,22 @@ export class FirefoxProtocol implements BrowserProtocol {
     socket.addEventListener('close', () => this.close());
     socket.addEventListener('error', () => this.close());
   }
-  private command(method: string, params: Json = {}): Promise<unknown> {
+  private command(method: string, params: Json = {}, navigation = false): Promise<unknown> {
     if (this.closed) return Promise.reject(new BrowserError('Firefox connection closed.'));
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new BrowserError(`Firefox ${method} timeout.`));
-      }, this.timeout);
+      const timer = setTimeout(
+        () => {
+          this.pending.delete(id);
+          reject(
+            new BrowserError(
+              `Firefox ${method} timeout.`,
+              navigation ? 'navigation_timeout' : 'browser_runtime'
+            )
+          );
+        },
+        navigation ? this.navigationTimeout : this.timeout
+      );
       this.pending.set(id, { resolve, reject, timer });
       try {
         this.socket.send(JSON.stringify({ id, method, params }));
@@ -214,14 +223,22 @@ export class FirefoxProtocol implements BrowserProtocol {
           devicePixelRatio: 1,
         });
       case 'Page.navigate':
-        await this.command('browsingContext.navigate', {
-          context: this.context,
-          url: params.url,
-          wait: 'complete',
-        });
+        await this.command(
+          'browsingContext.navigate',
+          {
+            context: this.context,
+            url: params.url,
+            wait: 'interactive',
+          },
+          true
+        );
         return {};
       case 'Page.reload':
-        return this.command('browsingContext.reload', { context: this.context, wait: 'complete' });
+        return this.command(
+          'browsingContext.reload',
+          { context: this.context, wait: 'interactive' },
+          true
+        );
       case 'Runtime.evaluate': {
         const result = obj(
           await this.command('script.evaluate', {
@@ -430,7 +447,11 @@ export async function launchFirefox(
         { once: true }
       );
     });
-    const connected = new FirefoxProtocol(connection, limits.commandTimeoutMs);
+    const connected = new FirefoxProtocol(
+      connection,
+      limits.commandTimeoutMs,
+      limits.navigationTimeoutMs
+    );
     protocol = connected;
     child.once('exit', () => connected.close());
     await connected.initialize();
