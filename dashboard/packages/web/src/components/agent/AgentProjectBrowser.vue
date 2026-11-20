@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch, watchEffect } from 'vue';
-import { workbenchContext } from '../../composables/useWorkbenchContext.js';
+import { requestNewTask, workbenchContext } from '../../composables/useWorkbenchContext.js';
+import { engineMode } from '../../composables/useEngineMode.js';
 import ProjectCard from '../ProjectCard.vue';
-import { pendingNewTask } from '../../composables/useWorkbenchContext.js';
 import AgentArchitectureMap from './AgentArchitectureMap.vue';
 import type { AgentProject, DurableTaskSummary } from '@observatory/contracts';
 import { useAgentCockpit } from '../../composables/useAgentCockpit.js';
@@ -13,7 +13,7 @@ import { taskStatusLabel } from '../../lib/labels.js';
 import { t } from '../../lib/i18n.js';
 
 const cockpit = useAgentCockpit();
-const { projects, tasks, tasksLoading } = cockpit;
+const { projects, projectsLoading, tasks } = cockpit;
 const { appRoute, navigateTo } = useAppRoute();
 const { isPinned, togglePin, persistenceFailed } = useProjectPins();
 const query = ref('');
@@ -137,7 +137,7 @@ watchEffect(() => {
   <section class="project-browser" :aria-label="t('projects.title')">
     <p v-if="cockpit.error.value" class="inline-error" role="status">{{ cockpit.error.value }}</p>
     <div v-if="appRoute.projectId && !selectedGroup" class="task-note" role="status">
-      <p>{{ tasksLoading ? t('agent.tasksLoading') : t('projects.notFound') }}</p>
+      <p>{{ projectsLoading ? t('projects.loading') : t('projects.notFound') }}</p>
       <button class="task-back-button" @click="navigateTo('projects')">
         ← {{ t('projects.back') }}
       </button>
@@ -177,7 +177,9 @@ watchEffect(() => {
         <p v-if="projectGroups.length && !filteredGroups.length" class="task-list-empty">
           {{ t('projects.noMatches') }}
         </p>
-        <p v-if="tasksLoading" class="task-list-empty">{{ t('agent.tasksLoading') }}</p>
+        <p v-if="projectsLoading" class="task-list-empty" role="status">
+          {{ t('projects.loading') }}
+        </p>
         <p v-else-if="!projectGroups.length" class="task-list-empty">{{ t('projects.empty') }}</p>
       </div>
     </template>
@@ -186,10 +188,9 @@ watchEffect(() => {
         <button
           v-if="selectedGroup.project && !selectedGroup.project.archived"
           class="primary-button"
-          @click="
-            pendingNewTask = { projectId: selectedGroup.id };
-            navigateTo('agent');
-          "
+          type="button"
+          :disabled="!engineMode.agentsAllowed"
+          @click="requestNewTask(selectedGroup.project)"
         >
           ＋ {{ t('agent.newTask') }}
         </button>
@@ -232,7 +233,7 @@ watchEffect(() => {
         :cockpit="cockpit"
       />
       <div v-else class="workbench-project-detail">
-        <div class="workbench-filter">
+        <div v-if="selectedGroup.items.length" class="workbench-filter">
           <button
             v-for="filter in ['all', 'active', 'other'] as const"
             :key="filter"
@@ -246,12 +247,12 @@ watchEffect(() => {
                   ? 'workbench.all'
                   : filter === 'active'
                     ? 'workspace.running'
-                    : 'workspace.attention'
+                    : 'projects.inactiveTasks'
               )
             }}
           </button>
         </div>
-        <div class="task-table">
+        <div v-if="visibleTasks.length" class="task-table">
           <button
             v-for="item in visibleTasks"
             :key="item.id"
@@ -267,7 +268,9 @@ watchEffect(() => {
             ><span aria-hidden="true">›</span>
           </button>
         </div>
-        <p v-if="!visibleTasks.length" class="task-list-empty">{{ t('projects.noTasks') }}</p>
+        <p v-else class="task-list-empty" role="status">
+          {{ t(selectedGroup.items.length ? 'projects.noMatchingTasks' : 'projects.noTasks') }}
+        </p>
       </div>
     </template>
   </section>

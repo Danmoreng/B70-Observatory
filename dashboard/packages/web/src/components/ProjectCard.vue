@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { AgentProject } from '@observatory/contracts';
 import { navigateTo } from '../composables/useAppRoute.js';
-import { pendingNewTask } from '../composables/useWorkbenchContext.js';
+import { requestNewTask } from '../composables/useWorkbenchContext.js';
+import { engineMode } from '../composables/useEngineMode.js';
 import { useProjectPins } from '../composables/useProjectPins.js';
 import { formatShortDateTime } from '../lib/format.js';
 import { t } from '../lib/i18n.js';
@@ -20,10 +21,6 @@ function open(event: MouseEvent) {
     return;
   event.preventDefault();
   navigateTo('projects', undefined, props.id);
-}
-function newTask() {
-  pendingNewTask.value = { projectId: props.id };
-  navigateTo('agent');
 }
 </script>
 <template>
@@ -56,7 +53,9 @@ function newTask() {
     <button
       v-if="project && !project.archived"
       class="text-button project-card-create"
-      @click="newTask"
+      type="button"
+      :disabled="!engineMode.agentsAllowed"
+      @click="requestNewTask(project)"
     >
       ＋ {{ t('agent.newTask') }}
     </button>

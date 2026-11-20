@@ -13,6 +13,7 @@ import {
   type DurableSteering,
 } from '@observatory/contracts';
 import { appRoute } from '../src/composables/useAppRoute.js';
+import { requestNewTask } from '../src/composables/useWorkbenchContext.js';
 import AgentCockpit from '../src/components/AgentCockpit.vue';
 import WorkbenchBreadcrumb from '../src/components/WorkbenchBreadcrumb.vue';
 import AgentTimeline from '../src/components/agent/AgentTimeline.vue';
@@ -564,6 +565,60 @@ describe('Agent Cockpit UI fixtures', () => {
       wrapper.unmount();
     }
   });
+
+  it.each([true, false])(
+    'preserves the requested project through a delayed registry response (available: %s)',
+    async (available) => {
+      const project = {
+        id: '10000000-0000-4000-8000-000000000002',
+        name: 'Morhuhn',
+        repositoryPath: '/tmp/morhuhn',
+        targetBranch: 'main',
+        workdir: '.',
+        editPaths: ['.'],
+        checks: [],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+      let finishProjects!: (projects: AgentProject[]) => void;
+      vi.mocked(fetchAgentProjects).mockImplementationOnce(
+        () => new Promise((resolve) => (finishProjects = resolve))
+      );
+      vi.mocked(startAgentRun).mockClear();
+      requestNewTask(project);
+      const wrapper = await mountFixture(idle);
+      try {
+        const select = wrapper.get<HTMLSelectElement>('#agent-project').element;
+        const start = wrapper.get<HTMLButtonElement>(
+          'form.agent-form button[type="submit"]'
+        ).element;
+        await wrapper.get('#agent-task').setValue('Check the project assignment');
+        expect(select.value).toBe(project.id);
+        expect(select.selectedOptions[0]?.textContent?.trim()).toBe('Morhuhn');
+        expect(start.disabled).toBe(true);
+
+        finishProjects([
+          { ...project, id: '10000000-0000-4000-8000-000000000001', name: 'Observatory' },
+          ...(available ? [project] : []),
+        ]);
+        await flushPromises();
+        expect(select.value).toBe(project.id);
+        expect(start.disabled).toBe(!available);
+        await wrapper.get('form.agent-form').trigger('submit');
+        await flushPromises();
+        if (available) {
+          expect(startAgentRun).toHaveBeenCalledWith(
+            expect.objectContaining({ projectId: project.id })
+          );
+        } else {
+          expect(wrapper.text()).toContain('This project is unavailable.');
+          expect(startAgentRun).not.toHaveBeenCalled();
+        }
+      } finally {
+        wrapper.unmount();
+      }
+    }
+  );
 
   it('renders the empty state without duplicate explanatory cards', async () => {
     const wrapper = await mountFixture(idle);

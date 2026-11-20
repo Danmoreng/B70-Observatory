@@ -16,7 +16,11 @@ import {
 } from '../lib/api.js';
 import { formatRuntimeClock, formatShortDateTime } from '../lib/format.js';
 import { runStatusLabel, taskStatusView } from '../lib/labels.js';
-import { workbenchContext, pendingNewTask } from '../composables/useWorkbenchContext.js';
+import {
+  workbenchContext,
+  pendingNewTask,
+  type NewTaskProject,
+} from '../composables/useWorkbenchContext.js';
 import { t } from '../lib/i18n.js';
 import { useNotification } from '../composables/useNotifications.js';
 import type { AgentInputMode } from '../lib/drafts.js';
@@ -55,6 +59,7 @@ const {
   releasing,
   deploying,
   projects,
+  projectsLoading,
   tasks,
   selectedTaskId,
   selectedTask,
@@ -69,6 +74,10 @@ const dictating = ref(false);
 const name = ref('');
 const projectId = ref('');
 const activeProjects = computed(() => projects.value.filter((project) => !project.archived));
+const selectedProject = computed(() =>
+  activeProjects.value.find((project) => project.id === projectId.value)
+);
+const requestedProject = ref<NewTaskProject>();
 const projectMode = ref<'existing' | 'app' | 'github'>('existing');
 const newProjectName = ref('');
 const githubUrl = ref('');
@@ -353,6 +362,7 @@ const runtime = computed(() => {
 async function startRun(): Promise<void> {
   if (!engineMode.value.agentsAllowed) return;
   if (creatingProject.value || submitting.value || preparingImages.value) return;
+  if (projectMode.value === 'existing' && !selectedProject.value) return;
   if (projectMode.value !== 'existing') {
     creatingProject.value = true;
     try {
@@ -539,7 +549,7 @@ onBeforeUnmount(() => {
 watch(
   activeProjects,
   (items) => {
-    if (!items.some((project) => project.id === projectId.value))
+    if (!selectedProject.value && (!showTaskDialog.value || projectId.value === ''))
       projectId.value = items[0]?.id ?? '';
   },
   { immediate: true }
@@ -606,15 +616,23 @@ watch(selectedTaskId, (taskId) => {
   if (appRoute.taskId === taskId) return;
   navigateTo('agent', taskId);
 });
+function openTaskDialog(project?: NewTaskProject): void {
+  requestedProject.value = project;
+  if (project) {
+    projectId.value = project.id;
+    projectMode.value = 'existing';
+    showProjectForm.value = false;
+  } else if (!selectedProject.value) {
+    projectId.value = activeProjects.value[0]?.id ?? '';
+  }
+  showTaskDialog.value = true;
+}
+
 watch(
   pendingNewTask,
   (request) => {
     if (!request) return;
-    if (activeProjects.value.some((project) => project.id === request.projectId)) {
-      projectId.value = request.projectId!;
-      projectMode.value = 'existing';
-    }
-    showTaskDialog.value = true;
+    openTaskDialog(request.project);
     pendingNewTask.value = undefined;
   },
   { immediate: true }
@@ -678,7 +696,7 @@ watch(selectedTask, (detail) => {
             class="primary-button"
             type="button"
             :disabled="!engineMode.agentsAllowed || snapshot?.enabled !== true"
-            @click="showTaskDialog = true"
+            @click="openTaskDialog()"
           >
             {{ t('agent.newTask') }}
           </button>
@@ -727,11 +745,29 @@ watch(selectedTask, (detail) => {
             </template>
             <template v-else>
               <label for="agent-project">{{ t('agent.project') }}</label>
-              <select id="agent-project" v-model="projectId" required>
+              <select
+                id="agent-project"
+                v-model="projectId"
+                required
+                :disabled="creatingProject || submitting || (projectsLoading && !selectedProject)"
+              >
+                <option v-if="!selectedProject" disabled :value="projectId">
+                  {{
+                    requestedProject?.id === projectId
+                      ? requestedProject.name
+                      : t('agent.selectProject')
+                  }}
+                </option>
                 <option v-for="project in activeProjects" :key="project.id" :value="project.id">
                   {{ project.name }}
                 </option>
               </select>
+              <p v-if="!selectedProject && projectsLoading" role="status">
+                {{ t('projects.loading') }}
+              </p>
+              <p v-else-if="!selectedProject && projectId" role="status">
+                {{ t('agent.projectUnavailable') }}
+              </p>
               <button
                 class="text-button project-add-toggle"
                 type="button"
@@ -756,6 +792,7 @@ watch(selectedTask, (detail) => {
               maxlength="65536"
               rows="9"
               required
+              :autofocus="requestedProject !== undefined"
               :placeholder="t('agent.taskPlaceholder')"
             ></textarea>
             <AgentDictation
@@ -768,27 +805,29 @@ watch(selectedTask, (detail) => {
               :disabled="submitting || creatingProject"
               @busy="preparingImages = $event"
             />
-            <button
-              class="primary-button"
-              type="submit"
-              :disabled="
-                !engineMode.agentsAllowed ||
-                creatingProject ||
-                submitting ||
-                preparingImages ||
-                dictating ||
-                task.trim() === '' ||
-                (projectMode !== 'existing' && newProjectName.trim() === '')
-              "
-            >
-              {{
-                creatingProject
-                  ? t('agent.creatingProject')
-                  : submitting
-                    ? t('agent.starting')
-                    : t('agent.start')
-              }}
-            </button>
+            <div class="agent-form-actions">
+              <button
+                class="primary-button"
+                type="submit"
+                :disabled="
+                  !engineMode.agentsAllowed ||
+                  creatingProject ||
+                  submitting ||
+                  preparingImages ||
+                  dictating ||
+                  task.trim() === '' ||
+                  (projectMode === 'existing' ? !selectedProject : newProjectName.trim() === '')
+                "
+              >
+                {{
+                  creatingProject
+                    ? t('agent.creatingProject')
+                    : submitting
+                      ? t('agent.starting')
+                      : t('agent.start')
+                }}
+              </button>
+            </div>
           </form>
 
           <form

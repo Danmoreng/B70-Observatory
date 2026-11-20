@@ -190,6 +190,13 @@ describe('project browser', () => {
     expect(wrapper.get('.project-view-tabs [aria-selected="true"]').text()).toBe('Project map');
     await wrapper.findAll('.project-view-tabs button')[0]!.trigger('click');
     expect(wrapper.findAll('.task-table-row')).toHaveLength(2);
+    await wrapper.get('.workbench-filter button:last-child').trigger('click');
+    expect(wrapper.get('.task-table-row').text()).toContain('Alpha done task');
+
+    appRoute.projectId = mockState.projects[1]!.id;
+    await flushPromises();
+    await wrapper.get('.workbench-filter button:nth-child(2)').trigger('click');
+    expect(wrapper.get('.task-list-empty').text()).toBe('No tasks match this filter.');
   });
 
   it('opens a project directly from a list row', async () => {

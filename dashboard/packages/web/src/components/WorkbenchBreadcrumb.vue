@@ -2,7 +2,7 @@
 import { engineMode } from '../composables/useEngineMode.js';
 import { computed } from 'vue';
 import { appRoute, navigateTo } from '../composables/useAppRoute.js';
-import { workbenchContext as context, pendingNewTask } from '../composables/useWorkbenchContext.js';
+import { requestNewTask, workbenchContext as context } from '../composables/useWorkbenchContext.js';
 import { t } from '../lib/i18n.js';
 const label = computed(() =>
   t(
@@ -81,15 +81,14 @@ const currentTask = computed(() => task.value && appRoute.taskId === context.tas
       v-if="
         engineMode.agentsAllowed &&
         !appRoute.taskId &&
-        !['agent', 'settings'].includes(appRoute.page)
+        !['agent', 'settings'].includes(appRoute.page) &&
+        !(appRoute.page === 'projects' && appRoute.projectId)
       "
       class="quiet-button"
-      @click="
-        pendingNewTask = { projectId: project ? context.projectId : undefined };
-        navigateTo('agent');
-      "
+      type="button"
+      @click="requestNewTask()"
     >
-      ＋ {{ t('workspace.newTask') }}
+      ＋ {{ t('agent.newTask') }}
     </button>
   </header>
 </template>

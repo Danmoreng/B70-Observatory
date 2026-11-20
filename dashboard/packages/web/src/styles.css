@@ -2112,6 +2112,17 @@ dd {
 .agent-form .primary-button {
   min-height: 40px;
 }
+.agent-form-actions .primary-button {
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .agent-form-actions {
+    position: sticky;
+    bottom: 0;
+    padding: 8px 0;
+    background: var(--panel);
+  }
+}
 .queue-note {
   color: var(--warn);
   font-size: 11px;

@@ -192,6 +192,7 @@ export interface AgentCockpitState {
   releasing: Ref<boolean>;
   deploying: Ref<boolean>;
   projects: Ref<AgentProject[]>;
+  projectsLoading: Ref<boolean>;
   tasks: Ref<DurableTaskList>;
   selectedTaskId: Ref<string | undefined>;
   selectedTask: Ref<DurableTaskDetail | undefined>;
@@ -241,6 +242,7 @@ export function useAgentCockpit(): AgentCockpitState {
   const releasing = ref(false);
   const deploying = ref(false);
   const projects = ref<AgentProject[]>([]);
+  const projectsLoading = ref(true);
   const tasks = ref<DurableTaskList>(taskListCache);
   const selectedTaskId = ref<string>();
   const selectedTask = ref<DurableTaskDetail>();
@@ -255,6 +257,7 @@ export function useAgentCockpit(): AgentCockpitState {
   let disposed = false;
   let selectionGeneration = 0;
   let listGeneration = 0;
+  let projectGeneration = 0;
 
   const hasPendingDelivery = (detail: DurableTaskDetail | undefined): boolean =>
     detail !== undefined &&
@@ -503,11 +506,15 @@ export function useAgentCockpit(): AgentCockpitState {
   };
 
   const refreshProjects = async (): Promise<void> => {
+    const generation = ++projectGeneration;
+    projectsLoading.value = true;
     try {
       const next = await fetchAgentProjects();
-      if (!disposed) projects.value = next;
+      if (!disposed && generation === projectGeneration) projects.value = next;
     } catch {
       // Main runner state already communicates availability. Keep navigation usable.
+    } finally {
+      if (!disposed && generation === projectGeneration) projectsLoading.value = false;
     }
   };
 
@@ -1050,6 +1057,7 @@ export function useAgentCockpit(): AgentCockpitState {
     releasing,
     deploying,
     projects,
+    projectsLoading,
     tasks,
     selectedTaskId,
     selectedTask,
