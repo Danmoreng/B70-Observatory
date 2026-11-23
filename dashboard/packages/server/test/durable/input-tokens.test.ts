@@ -214,3 +214,30 @@ it('attributes previously unconsumed tool input to the continuation that first s
     ])
   );
 });
+
+it('counts long vision histories across bounded turns using the recorded model', async () => {
+  // This is larger than the 32 MiB in-flight guard across the full session.
+  const pixels = 'A'.repeat(1024 * 1024);
+  const records: unknown[] = [input('turn1', 'Start'), answer()];
+  for (let i = 0; i < 33; i++) {
+    records.push({
+      kind: 'pi.tool-result',
+      model: [
+        {
+          role: 'toolResult',
+          toolCallId: String(i),
+          content: [{ type: 'image', mimeType: 'image/png', data: pixels }],
+        },
+      ],
+    });
+    const reply = answer();
+    records.push({ ...reply, model: [{ ...reply.model[0], model: 'inkling2-mini-exl3-b70' }] });
+  }
+  const tokenizer = vi.fn(async (_unit: unknown, model?: string) =>
+    model === 'inkling2-mini-exl3-b70' ? 100 : 0
+  );
+  expect(await readUniqueInputTokens(fixture(records), bindings, tokenizer)).toEqual(
+    new Map([['run1', 4300]])
+  );
+  expect(tokenizer).toHaveBeenCalledTimes(33);
+});

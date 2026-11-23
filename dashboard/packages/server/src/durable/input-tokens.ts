@@ -17,9 +17,9 @@ type RunBinding = { runId: string; turnId: string };
 export function createInputTokenCounter(
   config: Pick<RunnerConfig, 'model' | 'gatewayUrl' | 'gatewayToken' | 'imageGenerationEnabled'>,
   fetchRequest: typeof fetch = globalThis.fetch
-): (unit: InputUnit) => Promise<number> {
+): (unit: InputUnit, model?: string) => Promise<number> {
   const cache = new Map<string, Promise<number>>();
-  async function tokenize(body: ObjectValue): Promise<number> {
+  async function tokenize(body: ObjectValue, model: string): Promise<number> {
     const response = await fetchRequest(
       new URL('/v1/tokenize', config.gatewayUrl ?? 'http://127.0.0.1:8090'),
       {
@@ -28,7 +28,7 @@ export function createInputTokenCounter(
           'content-type': 'application/json',
           authorization: `Bearer ${config.gatewayToken ?? 'local-b70-gateway'}`,
         },
-        body: JSON.stringify({ model: config.model, ...body }),
+        body: JSON.stringify({ model, ...body }),
         signal: AbortSignal.timeout(config.imageGenerationEnabled ? 45 * 60_000 : 12_000),
       }
     );
@@ -37,16 +37,12 @@ export function createInputTokenCounter(
     if (!count(value?.count)) throw new Error('Invalid tokenizer count');
     return value.count;
   }
-  function cached(body: ObjectValue): Promise<number> {
+  function cached(model: string, body: ObjectValue): Promise<number> {
     const encoded = JSON.stringify(body);
-    const key = createHash('sha256')
-      .update(config.model)
-      .update('\0')
-      .update(encoded)
-      .digest('hex');
+    const key = createHash('sha256').update(model).update('\0').update(encoded).digest('hex');
     const existing = cache.get(key);
     if (existing) return existing;
-    const pending = tokenize(body).catch((error) => {
+    const pending = tokenize(body, model).catch((error) => {
       cache.delete(key);
       throw error;
     });
@@ -54,10 +50,10 @@ export function createInputTokenCounter(
     if (cache.size > 2048) cache.delete(cache.keys().next().value!);
     return pending;
   }
-  return async (unit) => {
-    if ('text' in unit) return unit.text.length ? await cached({ prompt: unit.text }) : 0;
-    const baseline = await cached({ messages: [{ role: 'user', content: [] }] });
-    const image = await cached({
+  return async (unit, model = config.model) => {
+    if ('text' in unit) return unit.text.length ? await cached(model, { prompt: unit.text }) : 0;
+    const baseline = await cached(model, { messages: [{ role: 'user', content: [] }] });
+    const image = await cached(model, {
       messages: [
         {
           role: 'user',
@@ -84,7 +80,7 @@ export function createInputTokenCounter(
 export async function readUniqueInputTokens(
   path: string,
   runs: readonly RunBinding[],
-  tokenize: (unit: InputUnit) => Promise<number>
+  tokenize: (unit: InputUnit, model?: string) => Promise<number>
 ): Promise<Map<string, number> | undefined> {
   let database: DatabaseSync | undefined;
   try {
@@ -95,7 +91,6 @@ export async function readUniqueInputTokens(
       return undefined;
     const byTurn = new Map(runs.map((run) => [run.turnId, run.runId]));
     const totals = new Map<string, number>();
-    const consumed: Array<{ runId: string; unit: InputUnit }> = [];
     let current: string | undefined;
     let initial = true;
     let pending: InputUnit[] = [];
@@ -103,7 +98,18 @@ export async function readUniqueInputTokens(
     const seenTools = new Set<string>();
     let bytes = 0,
       rows = 0;
-    for (const row of database.prepare('SELECT record FROM entries ORDER BY id').iterate()) {
+    // Read the append-only history to a fixed high-water mark. Release each
+    // SQLite statement before awaiting the tokenizer so writers can checkpoint.
+    const last = database.prepare('SELECT MAX(id) AS id FROM entries').get()?.id;
+    if (!count(last)) return undefined;
+    const next = database.prepare(
+      'SELECT id, record FROM entries WHERE id > ? AND id <= ? ORDER BY id LIMIT 1'
+    );
+    let cursor = 0;
+    while (cursor < last) {
+      const row = next.get(cursor, last);
+      if (!row || !count(row.id)) return undefined;
+      cursor = row.id;
       if (
         ++rows > 10_000 ||
         typeof row.record !== 'string' ||
@@ -150,9 +156,20 @@ export async function readUniqueInputTokens(
                   'text' in unit || (unit.source === 'user' ? userImages-- > 0 : toolImages-- > 0)
               )
               .reverse();
-            for (const unit of visible) consumed.push({ runId: current, unit });
+            let total = totals.get(current) ?? 0;
+            for (const unit of visible) {
+              const tokens = await tokenize(
+                unit,
+                typeof message.model === 'string' ? message.model : undefined
+              );
+              if (!count(tokens)) return undefined;
+              total += tokens;
+              if (!count(total)) return undefined;
+            }
+            totals.set(current, total);
           }
           pending = [];
+          bytes = 0; // Bound the outstanding turn, including its image payloads.
           continue;
         }
         if (initial || message.role === 'system' || entry.kind === 'pi.compaction') continue;
@@ -182,17 +199,7 @@ export async function readUniqueInputTokens(
         }
       }
     }
-    database.close();
-    database = undefined;
-    if (initial) return undefined;
-    for (const { runId, unit } of consumed) {
-      const tokens = await tokenize(unit);
-      if (!count(tokens)) return undefined;
-      const total = (totals.get(runId) ?? 0) + tokens;
-      if (!count(total)) return undefined;
-      totals.set(runId, total);
-    }
-    return totals;
+    return initial ? undefined : totals;
   } catch {
     return undefined;
   } finally {
