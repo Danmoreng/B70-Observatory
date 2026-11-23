@@ -65,6 +65,7 @@ Conflicts=b70-qwen38-vllm.service diffusion-desk-comfyui.service
 Type=exec
 WorkingDirectory={recipe}
 Environment=INKLING2_VLLM_PORT=8081 INKLING2_VISION=1 INKLING2_VISION_FUSED_QKV=1 INKLING2_PREFILL_PROFILE=optimized
+Environment=INKLING2_MAX_SEQS=2
 ExecStartPre={unit_path(ROOT/'text-engine/scripts/set-power-limit.py')}
 ExecStart=/usr/bin/bash scripts/serve-coding-agent.sh dspark
 ExecStop=-/usr/bin/docker stop -t 15 inkling2-vllm-exl3
