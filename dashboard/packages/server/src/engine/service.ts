@@ -65,20 +65,26 @@ export function createEngineServiceController(
     return stdout;
   },
   gpu?: GpuScheduler,
-  runtimeActionsAllowed: () => boolean = () => true
+  runtimeActionsAllowed: () => boolean = () => true,
+  selectedUnit: () => string = () => UNIT,
+  autostartUnit: () => string = selectedUnit
 ): EngineServiceController {
   let busy = false;
   const status = async (): Promise<EngineServiceStatus> => {
     const output = await run([
       'show',
-      UNIT,
+      selectedUnit(),
       '--no-pager',
       '--property=LoadState,ActiveState,UnitFileState',
     ]);
     const properties = unitProperties(output);
-    if (properties.get('LoadState') !== 'loaded') throw new Error(`${UNIT} is not loaded.`);
+    if (properties.get('LoadState') !== 'loaded')
+      throw new Error(`${selectedUnit()} is not loaded.`);
     const activeState = unitState(properties);
-    const unitFileState = properties.get('UnitFileState');
+    const unitFileState =
+      autostartUnit() === selectedUnit()
+        ? properties.get('UnitFileState')
+        : (await run(['show', autostartUnit(), '--property=UnitFileState', '--value'])).trim();
     if (unitFileState === undefined) throw new Error('Autostart state is unavailable.');
     return {
       activeState,
@@ -91,7 +97,7 @@ export function createEngineServiceController(
     async runtimes() {
       const output = await run([
         'show',
-        UNIT,
+        selectedUnit(),
         IMAGE_UNIT,
         '--no-pager',
         '--property=Id,LoadState,ActiveState,ActiveEnterTimestampMonotonic',
@@ -103,7 +109,7 @@ export function createEngineServiceController(
       const nowMicros = Number(process.hrtime.bigint() / 1000n);
       return {
         text: runtime(
-          units.find((p) => p.get('Id') === UNIT),
+          units.find((p) => p.get('Id') === selectedUnit()),
           nowMicros
         ),
         image: runtime(
@@ -123,8 +129,8 @@ export function createEngineServiceController(
         const perform = async () =>
           run(
             action === 'start' || action === 'stop' || action === 'restart'
-              ? [action, ...(gpu ? [] : ['--no-block']), UNIT]
-              : [action, UNIT]
+              ? [action, ...(gpu ? [] : ['--no-block']), selectedUnit()]
+              : [action, autostartUnit()]
           );
         if (gpu) await gpu.manual(perform);
         else await perform();

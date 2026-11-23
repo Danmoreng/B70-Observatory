@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { engineMode } from '../composables/useEngineMode.js';
 import { studioLabel } from '../studio/copy.js';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { EngineMetricsSchema, type EngineMetrics } from '@observatory/contracts';
@@ -51,7 +52,8 @@ const seconds = (value: number | undefined) =>
     <div class="engine-status-strip" :aria-label="t('imageMetrics.title')" role="status">
       <template v-if="metrics">
         <span :class="{ ready: metrics.textReady }"
-          ><i aria-hidden="true"></i>Qwen 27B ·
+          ><i aria-hidden="true"></i
+          >{{ engineMode.model === 'inkling2-mini-exl3-b70' ? 'Inkling 2 Mini' : 'Qwen 27B' }} ·
           {{
             metrics.textReady
               ? t('imageMetrics.ready')

@@ -39,7 +39,11 @@ export function createInputTokenCounter(
   }
   function cached(body: ObjectValue): Promise<number> {
     const encoded = JSON.stringify(body);
-    const key = createHash('sha256').update(encoded).digest('hex');
+    const key = createHash('sha256')
+      .update(config.model)
+      .update('\0')
+      .update(encoded)
+      .digest('hex');
     const existing = cache.get(key);
     if (existing) return existing;
     const pending = tokenize(body).catch((error) => {

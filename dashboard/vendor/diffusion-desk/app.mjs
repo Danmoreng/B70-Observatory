@@ -76,7 +76,7 @@ export async function createDesk(options) {
       return json(response, 200, { model: 'MiniMax H3 Image · INT8', sizes: SIZES, steps: 6, cfg: 1, sampler: 'euler', scheduler: 'simple',
         sampling: { samplers: SAMPLERS, schedulers: SCHEDULERS },
         maxReferences: MAX_REFERENCES, maxUploadBytes: MAX_UPLOAD_BYTES,
-        promptExpansion: { available: (options.expandPrompt ? true : await expansionAvailable(options)), maxReferences: EXPANSION_MAX_REFERENCES, model: options.expandPrompt ? 'Qwen 27B · vLLM' : EXPANDER_LABEL },
+        promptExpansion: { available: (options.expandPrompt ? true : await expansionAvailable(options)), maxReferences: EXPANSION_MAX_REFERENCES, model: options.expandPrompt ? options.expansionModel() : EXPANDER_LABEL },
         acceptingJobs: acceptingJobs() && (options.allowImages?.() ?? true), freeGiB: Math.round(await diskFree(options.comfyRoot) / 2 ** 30 * 10) / 10 });
     }
     if (mutation && ['/api/jobs', '/api/expansions'].includes(pathname) && options.allowImages && !options.allowImages()) throw Object.assign(Error('Select Hybrid or Bildstudio to generate images.'), { status: 409 });

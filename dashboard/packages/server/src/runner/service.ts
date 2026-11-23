@@ -1,4 +1,6 @@
 import { validateAgentImage } from '@observatory/runner';
+import { TextRecipeSchema, type TextRecipe } from '@observatory/contracts';
+import { createGpuSwitch } from '../engine/switcher.js';
 import { RunnerEngineMode, EngineMode } from '../engine/mode.js';
 import { distillRun } from '../memory/distill.js';
 import {
@@ -406,8 +408,10 @@ export class IsolatedAgentService implements AgentController {
   ) {
     this.enginePolicy = new RunnerEngineMode(
       join(dirname(config.stateRoot), 'engine-mode.json'),
-      config.imageGenerationEnabled === true
+      config.imageGenerationEnabled === true,
+      config.textRecipesEnabled ? TextRecipeSchema.parse(config.model) : undefined
     );
+    if (this.enginePolicy.model) config.model = this.enginePolicy.model;
     this.countInputTokens = createInputTokenCounter(config);
     if (config.memoryEnabled) {
       if (!config.memoryRuntimeRoot) throw new Error('Memory runtime root is missing.');
@@ -449,8 +453,53 @@ export class IsolatedAgentService implements AgentController {
   }
 
   private readonly enginePolicy: RunnerEngineMode;
-  async engineMode(mode?: EngineMode) {
+  private changingModel = false;
+  async recoverTextRecipe() {
+    const { model, pending } = this.enginePolicy;
+    if (!model || !pending) return;
+    await createGpuSwitch(this.config.upstreamUrl, 'http://127.0.0.1:8188').restoreText(
+      model,
+      pending.next,
+      pending.wasActive
+    );
+    this.enginePolicy.selectModel(model);
+  }
+  async engineMode(mode?: EngineMode, model?: TextRecipe) {
     try {
+      if ((mode || model) && this.changingModel)
+        throw new Error('A model switch is already in progress.');
+      if (model) {
+        const previous = this.enginePolicy.model;
+        if (!previous) throw new Error('Text recipes are not configured.');
+        if (this.enginePolicy.pending) throw new Error('Previous model switch requires recovery.');
+        if (model === previous) return this.enginePolicy.status();
+        if (
+          !this.enginePolicy.status().agentsAllowed ||
+          this.activeRunCount() ||
+          this.tasks.hasQueuedWork() ||
+          this.recoveryInProgress ||
+          this.memoryDistilling
+        )
+          throw new Error('Finish active or queued work before switching models.');
+        this.changingModel = true;
+        try {
+          await createGpuSwitch(this.config.upstreamUrl, 'http://127.0.0.1:8188').selectText(
+            previous,
+            model,
+            () => {
+              this.enginePolicy.selectModel(model);
+              this.config.model = model;
+              this.fallback = idleSnapshot(this.config);
+            },
+            {
+              begin: (wasActive) => this.enginePolicy.beginSwitch(model, wasActive),
+              rollback: () => this.enginePolicy.selectModel(previous),
+            }
+          );
+        } finally {
+          this.changingModel = false;
+        }
+      }
       const result = mode
         ? this.enginePolicy.set(
             mode,
@@ -465,6 +514,8 @@ export class IsolatedAgentService implements AgentController {
   }
   private assertEngineAdmission() {
     try {
+      if (this.changingModel || this.enginePolicy.pending)
+        throw new Error('Model switch in progress.');
       this.enginePolicy.assertAgents();
     } catch (error) {
       throw new AgentControlError('conflict', (error as Error).message);
@@ -596,6 +647,7 @@ export class IsolatedAgentService implements AgentController {
 
   async resumeDurableWork(): Promise<void> {
     if (
+      this.changingModel ||
       !this.enginePolicy.status().agentsAllowed ||
       this.recoveryInProgress ||
       this.closing ||
@@ -2832,11 +2884,13 @@ export function createRunnerControlServer(
       if (request.url === '/v1/engine-mode' && ['GET', 'POST'].includes(request.method || '')) {
         if (!service.engineMode)
           throw new AgentControlError('unavailable', 'Engine modes unavailable.');
-        const mode =
+        const input =
           request.method === 'POST'
-            ? EngineMode.parse(((await readJson(request)) as { mode?: unknown }).mode)
+            ? ((await readJson(request)) as { mode?: unknown; model?: unknown })
             : undefined;
-        json(response, 200, await service.engineMode(mode));
+        const model = input?.model === undefined ? undefined : TextRecipeSchema.parse(input.model);
+        const mode = input && !model ? EngineMode.parse(input.mode) : undefined;
+        json(response, 200, await service.engineMode(mode, model));
         return;
       }
       if (request.method === 'GET' && request.url === '/v1/snapshot') {
@@ -3347,6 +3401,7 @@ export async function createRunner(config: RunnerConfig): Promise<{
   }
   tasks.recoverInterruptedReleases();
   const service = new IsolatedAgentService(config, relay, tasks, npmRegistry);
+  await service.recoverTextRecipe();
   const control = createRunnerControlServer(config, service);
   return { relay, service, control };
 }

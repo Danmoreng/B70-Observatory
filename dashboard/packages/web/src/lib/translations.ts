@@ -81,7 +81,8 @@ const en = {
   'mode.studio': 'Image studio',
   'mode.textHint': 'Text engine only. No image tool for agents.',
   'mode.hybridHint': 'Agents and studio share the GPU through automatic engine switching.',
-  'mode.studioHint': 'Image studio with Qwen enhancements. Agent tasks are disabled.',
+  'mode.model': 'Text model',
+  'mode.studioHint': 'Image studio with text prompt enhancement. Agent tasks are disabled.',
   'mode.switching': 'Switching engine…',
 
   'memory.evidence': 'View source evidence',
@@ -904,7 +905,8 @@ const de: Record<TranslationKey, string> = {
   'mode.studio': 'Bildstudio',
   'mode.textHint': 'Nur Text-Engine. Agenten haben kein Bildwerkzeug.',
   'mode.hybridHint': 'Agenten und Bildstudio teilen die GPU mit automatischem Engine-Wechsel.',
-  'mode.studioHint': 'Bildstudio mit Qwen-Enhancements. Agentenaufgaben sind gesperrt.',
+  'mode.model': 'Textmodell',
+  'mode.studioHint': 'Bildstudio mit Prompt-Erweiterung. Agentenaufgaben sind gesperrt.',
   'mode.switching': 'Engine wird gewechselt…',
 
   'memory.evidence': 'Quellenbelege ansehen',

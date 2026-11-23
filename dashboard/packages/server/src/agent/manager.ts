@@ -138,7 +138,10 @@ export interface AgentRunImagePayload {
 }
 
 export interface AgentController {
-  engineMode?(mode?: EngineMode): Promise<EnginePolicy>;
+  engineMode?(
+    mode?: EngineMode,
+    model?: import('@observatory/contracts').TextRecipe
+  ): Promise<EnginePolicy>;
   memoryCall?(input: MemoryRequest): Promise<MemoryResponse>;
   snapshot(): AgentRunSnapshot;
   subscribe(listener: AgentListener): () => void;

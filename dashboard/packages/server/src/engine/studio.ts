@@ -97,6 +97,7 @@ export async function createStudio(options: StudioOptions) {
         .finally(() => imageWaiters.delete(job.id));
     },
     cancelExpansion: (id: string) => expansions.get(id)?.abort(),
+    expansionModel: options.model,
     expandPrompt: async (request: ExpansionRequest, references: ReferenceLibrary, id: string) => {
       const controller = new AbortController();
       expansions.set(id, controller);
@@ -150,7 +151,7 @@ export async function createStudio(options: StudioOptions) {
         });
         if (!response.ok) {
           await response.body?.cancel();
-          throw new Error('Qwen prompt enhancement failed. Check the engine status.');
+          throw new Error('Text prompt enhancement failed. Check the engine status.');
         }
         const body = resultSchema.parse(await response.json());
         const raw = body.choices[0]!.message.content.trim().replace(
@@ -162,7 +163,7 @@ export async function createStudio(options: StudioOptions) {
           prompt: result.expanded_caption,
           ratio: result.aspect_ratio,
           report: 'Review before applying.',
-          model: 'Qwen 27B · vLLM',
+          model: options.model(),
         };
       } finally {
         expansions.delete(id);

@@ -38,6 +38,7 @@ function isLoopbackHttpUrl(value: string): boolean {
 
 export const RunnerConfigSchema = z
   .object({
+    textRecipesEnabled: z.boolean().optional(),
     imageGenerationEnabled: z.boolean().optional(),
     memoryEnabled: z.boolean().optional(),
     memoryRuntimeRoot: absolutePath.optional(),
@@ -123,6 +124,7 @@ export const RunnerConfigSchema = z
 export type RunnerConfig = z.infer<typeof RunnerConfigSchema>;
 
 export interface RunnerEnv {
+  B70_RUNNER_TEXT_RECIPES?: string;
   B70_RUNNER_MEMORY_ENABLED?: string;
   B70_RUNNER_MEMORY_MODEL?: string;
   B70_RUNNER_GATEWAY_URL?: string;
@@ -167,6 +169,7 @@ export class RunnerConfigError extends Error {
 
 export function loadRunnerConfig(env: RunnerEnv = {}): RunnerConfig {
   const result = RunnerConfigSchema.safeParse({
+    textRecipesEnabled: env.B70_RUNNER_TEXT_RECIPES === '1',
     imageGenerationEnabled:
       env.B70_RUNNER_IMAGE_GENERATION_ENABLED === undefined
         ? false

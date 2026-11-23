@@ -4,6 +4,7 @@
  * upstream validation. Preserve the original bytes when no translation occurs.
  */
 export function normalizeReasoningEffort(body: Record<string, unknown>, raw: Buffer): Buffer {
+  if (body.model === 'inkling2-mini-exl3-b70') return raw;
   let changed = false;
   const map = (object: Record<string, unknown>, key: string): void => {
     if (object[key] === 'high') {

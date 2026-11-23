@@ -204,7 +204,7 @@ export class Jobs {
       }
       try {
         if (job.kind === 'expand' && this.options.expandPrompt) {
-          this.update(job.id, { status: 'running', started: now(), progress: { phase: 'Enhancing with Qwen 27B' } });
+          this.update(job.id, { status: 'running', started: now(), progress: { phase: 'Enhancing prompt' } });
           const result = await this.options.expandPrompt(job.request, this.references, job.id);
           if (this.get(job.id)?.status !== 'cancelled') this.update(job.id, { result, status: 'completed', finished: now(), progress: { phase: 'Ready to review' } });
         } else if (this.options.runImage) {

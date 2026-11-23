@@ -247,6 +247,7 @@ export const studioGerman = {
   'Releasing prompt model': 'Prompt-Modell wird freigegeben',
   'Ready to review': 'Bereit zur Prüfung',
   Completed: 'Abgeschlossen',
+  'Enhancing prompt': 'Prompt wird erweitert',
   'Enhancing with Qwen 27B': 'Erweiterung mit Qwen 27B',
   'Waiting for running text turns': 'Warten auf laufende Text-Turns',
   'Connection to the image studio interrupted. The display will reload automatically.':

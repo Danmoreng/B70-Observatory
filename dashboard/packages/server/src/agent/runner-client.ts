@@ -102,9 +102,14 @@ export class RunnerAgentClient implements AgentController {
     void this.refresh();
   }
 
-  async engineMode(mode?: EngineMode) {
+  async engineMode(mode?: EngineMode, model?: import('@observatory/contracts').TextRecipe) {
     return EnginePolicy.parse(
-      await this.jsonRequest(mode ? 'POST' : 'GET', '/v1/engine-mode', mode ? { mode } : undefined)
+      await this.jsonRequest(
+        mode || model ? 'POST' : 'GET',
+        '/v1/engine-mode',
+        model ? { model } : mode ? { mode } : undefined,
+        model ? 25 * 60_000 : 15_000
+      )
     );
   }
 

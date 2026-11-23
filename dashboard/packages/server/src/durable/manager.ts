@@ -249,6 +249,7 @@ export class DurableAgentManager {
     await this.conversation.configure(
       {
         instructions,
+        model: { provider: this.options.provider, modelId: this.options.model },
         thinkingLevel: this.options.thinkingLevel,
         tools: registry
           .snapshot()
@@ -271,6 +272,7 @@ export class DurableAgentManager {
       const conversation = await this.harness.conversation(child.id, ctx);
       await conversation?.configure(
         {
+          model: { provider: this.options.provider, modelId: this.options.model },
           tools: registry
             .snapshot()
             .tools()

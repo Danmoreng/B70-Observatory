@@ -45,7 +45,13 @@ export async function refreshEngineMode(signal?: AbortSignal) {
   if (!response.ok) return;
   engineMode.value = EngineModeStateSchema.parse(await response.json());
 }
-export async function setEngineMode(mode: EngineMode) {
+export function setEngineMode(mode: EngineMode) {
+  return applyEngine({ mode });
+}
+export function setTextRecipe(model: import('@observatory/contracts').TextRecipe) {
+  return applyEngine({ model });
+}
+async function applyEngine(change: { mode: EngineMode } | { model: string }) {
   if (settingMode.value) return;
   settingMode.value = true;
   modeError.value = '';
@@ -53,7 +59,7 @@ export async function setEngineMode(mode: EngineMode) {
     const response = await fetch('/api/engine/mode', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify(change),
       signal: AbortSignal.timeout(35 * 60_000),
     });
     const body = await response.json();

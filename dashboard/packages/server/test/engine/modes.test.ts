@@ -93,3 +93,21 @@ it('changes runner admission before swapping, rejects concurrent GPU work, and l
   expect(events.slice(-2)).toEqual(['policy:hybrid', 'text']);
   await gpu.close();
 });
+
+it('keeps the last verified recipe across a runner restart during a model switch', () => {
+  const root = mkdtempSync(join(tmpdir(), 'b70-recipe-'));
+  const file = join(root, 'mode.json');
+  try {
+    writeFileSync(file, '{"mode":"hybrid"}');
+    const open = () => new RunnerEngineMode(file, true, 'inkling2-mini-exl3-b70');
+    open().beginSwitch('Qwen3.8-27B', true);
+    const interrupted = open();
+    expect(interrupted.status()).toMatchObject({ mode: 'hybrid', model: 'inkling2-mini-exl3-b70' });
+    expect(interrupted.pending).toEqual({ next: 'Qwen3.8-27B', wasActive: true });
+    interrupted.selectModel('Qwen3.8-27B');
+    expect(open().model).toBe('Qwen3.8-27B');
+    expect(open().pending).toBeUndefined();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -21,7 +21,7 @@ import { RunnerAgentClient } from './agent/runner-client.js';
 import { createSpeechTranscriber } from './speech/service.js';
 import { createEngineServiceController } from './engine/service.js';
 import { GpuScheduler } from './engine/gpu-scheduler.js';
-import { createGpuSwitch } from './engine/switcher.js';
+import { createGpuSwitch, textUnits } from './engine/switcher.js';
 import { ComfyImages } from './engine/comfy-images.js';
 import { ImageJobs } from './engine/image-jobs.js';
 import { createEngineMetrics } from './engine/metrics.js';
@@ -40,8 +40,12 @@ export async function main(): Promise<void> {
   const requests = new RequestRepository(db);
   const serviceEvents = new ServiceEventRepository(db);
   const sessions = new AuthSessionRepository(db);
+  const selectedUnit = (): string =>
+    engineModes?.status().model === 'inkling2-mini-exl3-b70'
+      ? textUnits['inkling2-mini-exl3-b70']
+      : textUnits['Qwen3.8-27B'];
   const engines = config.imageJobsRoot
-    ? createGpuSwitch(config.upstreamUrl, config.comfyUrl)
+    ? createGpuSwitch(config.upstreamUrl, config.comfyUrl, {}, selectedUnit)
     : undefined;
   const gpuScheduler = engines ? new GpuScheduler(engines) : undefined;
   const imageJobs =
@@ -194,7 +198,10 @@ export async function main(): Promise<void> {
         ? createEngineServiceController(
             undefined,
             gpuScheduler,
-            () => engineModes?.status().mode !== 'studio'
+            () => engineModes?.status().mode !== 'studio',
+            selectedUnit,
+            () =>
+              engineModes?.status().models ? 'b70-observatory-text-boot.service' : selectedUnit()
           )
         : undefined,
     webRoot: config.mode === 'lan' ? webRoot : undefined,

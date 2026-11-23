@@ -1059,6 +1059,12 @@ export class AgentTaskStore {
     ).map((row) => ({ taskId: row.task_id, runId: row.id }));
   }
 
+  hasQueuedWork(): boolean {
+    return Boolean(
+      this.database.prepare("SELECT 1 FROM agent_runs WHERE status='queued' LIMIT 1").get()
+    );
+  }
+
   occupiedRunIds(): string[] {
     return (
       this.database

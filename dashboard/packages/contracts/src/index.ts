@@ -1794,9 +1794,13 @@ export * from './memory.js';
 
 export const EngineModeSchema = z.enum(['text', 'hybrid', 'studio']);
 export type EngineMode = z.infer<typeof EngineModeSchema>;
+export const TextRecipeSchema = z.enum(['Qwen3.8-27B', 'inkling2-mini-exl3-b70']);
+export type TextRecipe = z.infer<typeof TextRecipeSchema>;
 export const EngineModeStateSchema = z.object({
   mode: EngineModeSchema,
   changing: z.boolean(),
+  model: z.string().optional(),
+  models: z.array(TextRecipeSchema).optional(),
   imageTools: z.boolean(),
   agentsAllowed: z.boolean(),
   available: z.boolean().default(true),

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { EngineMode } from '@observatory/contracts';
-import { engineMode, setEngineMode, settingMode, modeError } from '../composables/useEngineMode.js';
+import {
+  engineMode,
+  setEngineMode,
+  setTextRecipe,
+  settingMode,
+  modeError,
+} from '../composables/useEngineMode.js';
 import { t } from '../lib/i18n.js';
 import { useNotification } from '../composables/useNotifications.js';
 import AppIcon from './AppIcon.vue';
@@ -14,11 +20,37 @@ watch(
     selected.value = mode;
   }
 );
+async function chooseModel(event: Event) {
+  const select = event.target as HTMLSelectElement;
+  const recipe = engineMode.value.models?.find((model) => model === select.value);
+  if (recipe) await setTextRecipe(recipe);
+  select.value = engineMode.value.model ?? '';
+}
 async function apply() {
   if (!busy.value && selected.value !== engineMode.value.mode) await setEngineMode(selected.value);
 }
 </script>
 <template>
+  <form v-if="engineMode.models?.length" class="engine-mode-control" @submit.prevent>
+    <label for="text-recipe"
+      ><strong>{{ t('mode.model') }}</strong></label
+    >
+    <select
+      id="text-recipe"
+      :value="engineMode.model"
+      :disabled="busy || !engineMode.agentsAllowed"
+      @change="chooseModel"
+    >
+      <option v-for="model in engineMode.models" :key="model" :value="model">
+        {{
+          model === 'inkling2-mini-exl3-b70'
+            ? 'Inkling 2 Mini · EXL3 / DSpark'
+            : 'Qwen3.8-27B · EXL3 / MTP'
+        }}
+      </option>
+    </select>
+    <span v-if="busy" role="status">{{ t('mode.switching') }}</span>
+  </form>
   <form v-if="engineMode.available" class="engine-mode-control" @submit.prevent="apply">
     <div
       class="engine-modes mode-cards"

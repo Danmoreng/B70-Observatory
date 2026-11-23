@@ -71,7 +71,7 @@ it('mounts the real studio API with uploads, gallery, policy gates and Qwen enha
     });
   try {
     const config = (await app.inject('/api/studio/api/config')).json();
-    expect(config.promptExpansion).toMatchObject({ available: true, model: 'Qwen 27B · vLLM' });
+    expect(config.promptExpansion).toMatchObject({ available: true, model: 'qualified-qwen-27b' });
     expect(config.acceptingJobs).toBe(false);
     expect(config.sampling.samplers).toContain('lcm');
     expect(config.sampling.schedulers).toContain('beta');
@@ -115,7 +115,7 @@ it('mounts the real studio API with uploads, gallery, policy gates and Qwen enha
     const result = (await app.inject('/api/studio/api/expansions/' + id)).json().job.result;
     expect(result).toMatchObject({
       prompt: 'A detailed photograph of an alpine lake.',
-      model: 'Qwen 27B · vLLM',
+      model: 'qualified-qwen-27b',
       ratio: '3:2',
     });
     expect((await mutate('/api/expansions/' + id, {}, 'DELETE')).statusCode).toBe(200);

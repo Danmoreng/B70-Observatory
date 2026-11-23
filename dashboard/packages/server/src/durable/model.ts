@@ -27,6 +27,7 @@ const Profile = z.object({
               contextWindow: z.number().int().positive(),
               maxTokens: z.number().int().positive(),
               reasoning: z.boolean().optional(),
+              samplingParams: z.record(z.string(), z.unknown()).optional(),
               input: z.array(z.enum(['text', 'image'])).optional(),
             })
             .passthrough()
@@ -55,6 +56,9 @@ export async function createLocalModels(
     api: 'openai-completions',
     baseUrl: (config.gatewayUrl ?? 'http://127.0.0.1:8090').replace(/\/$/, '') + '/v1',
     reasoning: source.reasoning ?? true,
+    ...(config.model === 'inkling2-mini-exl3-b70' && source.samplingParams
+      ? { samplingParams: source.samplingParams }
+      : {}),
     input: source.input ?? ['text'],
     contextWindow: source.contextWindow,
     maxTokens: source.maxTokens,
@@ -65,7 +69,12 @@ export async function createLocalModels(
       supportsStore: false,
       supportsReasoningEffort: true,
       maxTokensField: 'max_tokens',
-      thinkingFormat: 'qwen-chat-template',
+      ...(config.model === 'inkling2-mini-exl3-b70'
+        ? {
+            thinkingFormat: 'openai' as const,
+            thinkingTokenBudgetField: 'thinking_token_budget' as const,
+          }
+        : { thinkingFormat: 'qwen-chat-template' as const }),
     },
   };
   const models = createModels({ identity: { attribution: null } });
