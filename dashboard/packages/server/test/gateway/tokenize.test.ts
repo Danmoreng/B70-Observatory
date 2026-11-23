@@ -102,3 +102,33 @@ it('requires the existing gateway credential and creates no inference accounting
     temp.close();
   }
 });
+
+it('uses a framed empty text part for the Inkling image baseline only', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => Response.json({ count: 15 }));
+  vi.stubGlobal('fetch', fetcher);
+  const app = Fastify();
+  registerTokenize(app, loadServerConfig());
+  const image = { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } };
+  try {
+    for (const [model, content, expected] of [
+      ['inkling2-mini-exl3-b70', [], [{ type: 'text', text: '' }]],
+      ['inkling2-mini-exl3-b70', [image], [image]],
+      ['Qwen3.8-27B', [], []],
+    ] as const) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/v1/tokenize',
+        payload: { model, messages: [{ role: 'user', content }] },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(String(fetcher.mock.lastCall?.[1]?.body))).toEqual({
+        model,
+        messages: [{ role: 'user', content: expected }],
+        add_generation_prompt: false,
+        add_special_tokens: false,
+      });
+    }
+  } finally {
+    await app.close();
+  }
+});

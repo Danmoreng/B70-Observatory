@@ -42,10 +42,18 @@ export function registerTokenize(
       return reply.code(409).send({ error: 'Agent inference is disabled in Bildstudio mode.' });
     const parsed = bodySchema.safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid tokenizer input.' });
+    const input = parsed.data;
+    // Inkling needs one framed part for the zero-content image baseline.
+    // An empty string omits the user frame; an empty array is rejected.
     const body = {
-      ...parsed.data,
+      ...input,
       add_special_tokens: false,
-      ...('messages' in parsed.data ? { add_generation_prompt: false } : {}),
+      ...('messages' in input ? { add_generation_prompt: false } : {}),
+      ...('messages' in input &&
+      input.model === 'inkling2-mini-exl3-b70' &&
+      input.messages[0].content.length === 0
+        ? { messages: [{ role: 'user', content: [{ type: 'text', text: '' }] }] }
+        : {}),
     };
     let release: (() => void) | undefined;
     const abort = new AbortController();
